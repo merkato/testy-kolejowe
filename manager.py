@@ -3,14 +3,13 @@ from sqlalchemy.orm import Session, joinedload
 from db import get_session, User, ProfessionGroup, TestType
 import config
 
-def hash_password(password: str) -> str:
-    """Tworzy bezpieczny hash hasła."""
+def hash_password(password):
+    """Zmienia hasło na bezpieczny hash (zawsze zwraca string 60 znaków)."""
+    # Generujemy sól i hash
     salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
-
-def verify_password(password: str, hashed: str) -> bool:
-    """Sprawdza czy podane hasło zgadza się z hashem."""
-    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    # Zwracamy jako string, aby SQLAlchemy mogło to zapisać w VARCHAR
+    return hashed.decode('utf-8')
 
 def init_system_data():
     """Inicjalizuje grupy zawodowe i konto administratora przy pierwszym uruchomieniu."""
@@ -66,16 +65,29 @@ def create_user(username, password, role, profession_ids=None):
         session.close()
 
 def authenticate_user(username, password):
-    """Logowanie użytkownika - zwraca obiekt User lub None."""
+    """Weryfikuje użytkownika i przygotowuje obiekt do pracy w Streamlit."""
     session = get_session()
-    user = session.query(User).filter_by(username=username).first()
-    if user and verify_password(password, user.password_hash):
-        # Odłączamy od sesji, aby móc używać obiektu w session_state Streamlit
-        session.expunge(user)
+    try:
+        # Pobieramy użytkownika wraz z relacjami (joinedload zapobiega DetachedInstanceError)
+        user = session.query(User).options(joinedload(User.professions)).filter_by(username=username).first()
+        
+        if user:
+            # Sprawdzamy hasło: bcrypt.checkpw(hasło_wpisane, hasło_z_bazy)
+            if bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
+                # 1. Odłączamy obiekt od sesji (aby żył w st.session_state)
+                session.expunge(user)
+                # 2. Zwracamy obiekt - logowanie udane
+                return user
+        
+        # Jeśli nie ma użytkownika LUB hasło jest błędne
+        return None
+        
+    except Exception as e:
+        print(f"Błąd autoryzacji: {e}")
+        return None
+    finally:
+        # Zawsze zamykamy sesję na końcu
         session.close()
-        return user
-    session.close()
-    return None
 
 def update_user_password(user_id, new_password):
     """Zmienia hasło użytkownika (z hashowaniem)."""

@@ -12,7 +12,7 @@ manager.init_system_data()
 
 # 2. Konfiguracja strony (optymalizacja pod mobile)
 st.set_page_config(
-    page_title="System Testów Kolejowych",
+    page_title="Testy kolejowe",
     page_icon="logo.png", # Opcjonalnie
     layout="wide",
     initial_sidebar_state="expanded"
