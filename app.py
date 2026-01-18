@@ -51,28 +51,75 @@ def login_screen():
     
     render_footer()  # Wywołanie stopki na ekranie logowania
 
+def user_profile_page():
+    st.header("👤 Ustawienia konta")
+    user = st.session_state.user
+    st.write(f"Zalogowany jako: **{user.username}**")
+    st.write(f"Rola: **{user.role}**")
+    
+    with st.form("change_password_form"):
+        new_pass = st.text_input("Nowe hasło", type="password")
+        confirm_pass = st.text_input("Powtórz nowe hasło", type="password")
+        submit = st.form_submit_button("Zmień hasło")
+        
+        if submit:
+            if len(new_pass) < 6:
+                st.error("Hasło musi mieć co najmniej 6 znaków.")
+            elif new_pass != confirm_pass:
+                st.error("Hasła nie są identyczne.")
+            else:
+                if manager.update_user_password(user.id, new_pass):
+                    st.success("Hasło zostało zmienione!")
+                else:
+                    st.error("Błąd podczas zmiany hasła.")
+
 def admin_user_management():
-    """Interfejs zarządzania użytkownikami dla Administratora."""
     st.header("👥 Zarządzanie Użytkownikami")
     
-    with st.expander("Dodaj nowego użytkownika"):
-        with st.form("new_user_form"):
-            new_username = st.text_input("Nazwa użytkownika")
-            new_password = st.text_input("Hasło", type="password")
-            new_role = st.selectbox("Rola", [config.ROLE_USER, config.ROLE_EDITOR, config.ROLE_ADMIN])
-            
-            all_profs = manager.get_all_professions()
-            prof_map = {p.name: p.id for p in all_profs}
-            selected_profs = st.multiselect("Dostęp do grup zawodowych", list(prof_map.keys()))
-            
-            if st.form_submit_button("Utwórz konto"):
-                if new_username and new_password:
-                    prof_ids = [prof_map[name] for name in selected_profs]
-                    success, msg = manager.create_user(new_username, new_password, new_role, prof_ids)
-                    if success: st.success(msg)
-                    else: st.error(msg)
+    users = manager.get_all_users()
+    
+    # 1. Lista użytkowników w tabeli
+    user_data = []
+    for u in users:
+        user_data.append({
+            "ID": u.id,
+            "Login": u.username,
+            "Rola": u.role,
+            "Grupy": ", ".join([p.name for p in u.professions])
+        })
+    st.dataframe(pd.DataFrame(user_data), use_container_width=True, hide_index=True)
+    
+    st.divider()
+    
+    # 2. Formularz edycji wybranego użytkownika
+    st.subheader("Edytuj użytkownika")
+    user_map = {u.username: u for u in users}
+    selected_username = st.selectbox("Wybierz użytkownika do modyfikacji", list(user_map.keys()))
+    
+    if selected_username:
+        target_user = user_map[selected_username]
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            new_role = st.selectbox(
+                "Zmień rolę", 
+                [config.ROLE_ADMIN, config.ROLE_EDITOR, config.ROLE_USER],
+                index=[config.ROLE_ADMIN, config.ROLE_EDITOR, config.ROLE_USER].index(target_user.role)
+            )
+            if st.button("Aktualizuj rolę"):
+                manager.update_user_role(target_user.id, new_role)
+                st.success(f"Rola {selected_username} zmieniona na {new_role}")
+                st.rerun()
+                
+        with col2:
+            new_pass_admin = st.text_input("Resetuj hasło (wpisz nowe)", type="password")
+            if st.button("Zmień hasło użytkownikowi"):
+                if len(new_pass_admin) >= 6:
+                    manager.update_user_password(target_user.id, new_pass_admin)
+                    st.success(f"Hasło dla {selected_username} zostało zresetowane.")
                 else:
-                    st.warning("Uzupełnij login i hasło.")
+                    st.error("Za krótkie hasło.")
 
 def admin_profession_management():
     """Interfejs dodawania grup zawodowych i rodzajów testów z tabelami podglądu."""
@@ -151,11 +198,11 @@ def main():
     
     # Definicja menu na podstawie ról
     if user.role == config.ROLE_ADMIN:
-        menu_options = ["🏠 Start", "📝 Rozwiąż Test", "🛠️ Edytor Pytań", "👥 Użytkownicy", "🏗️ Grupy i Kategorie"]
+        menu_options = ["🏠 Start", "📝 Rozwiąż Test", "🛠️ Edytor Pytań", "👥 Użytkownicy", "🏗️ Grupy i Kategorie", "👤 Profil"]
     elif user.role == config.ROLE_EDITOR:
-        menu_options = ["🏠 Start", "📝 Rozwiąż Test", "🛠️ Edytor Pytań"]
+        menu_options = ["🏠 Start", "📝 Rozwiąż Test", "🛠️ Edytor Pytań", "👤 Profil"]
     else:
-        menu_options = ["🏠 Start", "📝 Rozwiąż Test"]
+        menu_options = ["🏠 Start", "📝 Rozwiąż Test", "👤 Profil"]
 
     choice = st.sidebar.radio("Nawigacja", menu_options)
 
@@ -185,7 +232,8 @@ def main():
 
     elif choice == "🏗️ Grupy i Kategorie" and user.role == config.ROLE_ADMIN:
         admin_profession_management()
-    
+    elif choice == "👤 Profil":
+        user_profile_page()
     st.markdown('</div>', unsafe_allow_html=True) # Zamknięcie kontenera treści
     
     render_footer()

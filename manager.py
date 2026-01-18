@@ -77,6 +77,40 @@ def authenticate_user(username, password):
     session.close()
     return None
 
+def update_user_password(user_id, new_password):
+    """Zmienia hasło użytkownika (z hashowaniem)."""
+    session = get_session()
+    try:
+        user = session.query(User).filter_by(id=user_id).first()
+        if user:
+            user.password = hash_password(new_password)
+            session.commit()
+            return True
+        return False
+    finally:
+        session.close()
+
+def update_user_role(user_id, new_role):
+    """Zmienia rolę użytkownika."""
+    session = get_session()
+    try:
+        user = session.query(User).filter_by(id=user_id).first()
+        if user:
+            user.role = new_role
+            session.commit()
+            return True
+        return False
+    finally:
+        session.close()
+
+def get_all_users():
+    """Zwraca listę wszystkich użytkowników."""
+    session = get_session()
+    try:
+        return session.query(User).all()
+    finally:
+        session.close()
+
 def get_all_professions():
     """Pobiera listę wszystkich grup zawodowych."""
     session = get_session()
