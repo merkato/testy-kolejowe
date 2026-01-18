@@ -1,0 +1,31 @@
+services:
+  db-testy:
+    image: mariadb:latest
+    container_name: testy-db
+    environment:
+      MYSQL_ROOT_PASSWORD: your_password
+      MYSQL_DATABASE: testy_db
+    volumes:
+      - db_data:/var/lib/mysql
+
+  app-testy:
+    build: .
+    container_name: testy
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      - db-testy
+    environment:
+      - DB_HOST=db-testy
+    networks:
+      - default
+      - npm_network # Sieć, w której pracuje Nginx Proxy Manager
+
+networks:
+  npm_network:
+    external: true
+
+volumes:
+  db_data:
