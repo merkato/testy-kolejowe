@@ -3,4 +3,5 @@ sqlalchemy
 pymysql
 bcrypt
 pillow
+pandas
 cryptography

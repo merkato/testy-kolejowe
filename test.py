@@ -1,5 +1,6 @@
 import streamlit as st
 import random
+from PIL import Image
 from db import get_session, Question, ProfessionGroup, TestType, update_question_stats
 import config
 
@@ -78,8 +79,10 @@ def show_test_ui():
         q = st.session_state.test_questions[idx]
 
         st.subheader(f"Pytanie {idx + 1} z 30")
-        if q.image_path:
-            st.image(q.image_path, use_container_width=True)
+       if q.image_path and os.path.exists(q.image_path):
+            img = Image.open(q.image_path)
+            img.thumbnail((config.QUESTION_IMAGE_SIZE, config.QUESTION_IMAGE_SIZE))
+            st.image(img)
         
         st.write(f"### {q.content}")
         

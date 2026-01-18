@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import uuid
-from PIL import Image
+import pandas as pd
 from db import get_session, Question, ProfessionGroup, TestType
 import config
 
@@ -27,6 +27,7 @@ def show_editor_ui():
     # Pobranie danych pomocniczych
     all_professions = session.query(ProfessionGroup).all()
     all_test_types = session.query(TestType).all()
+    all_questions = session.query(Question).all()
     
     prof_options = {p.name: p for p in all_professions}
     type_options = {t.name: t for t in all_test_types}
@@ -70,30 +71,30 @@ def show_editor_ui():
                         comment=comment
                     )
                     
-                    # Przypisanie relacji M2M
                     new_q.professions = [prof_options[name] for name in selected_profs]
                     new_q.test_types = [type_options[name] for name in selected_types]
                     
                     session.add(new_q)
                     session.commit()
                     st.success("Pytanie dodane pomyślnie!")
+                    st.rerun()
                 else:
                     st.error("Wypełnij wszystkie pola treści i odpowiedzi.")
 
     # --- LOGIKA: EDYCJA / USUWANIE ---
     else:
         st.subheader("Zarządzaj pytaniami")
-        questions = session.query(Question).all()
-        q_list = {f"ID {q.id}: {q.content[:50]}...": q for q in questions}
+        q_list = {f"ID {q.id}: {q.content[:50]}...": q for q in all_questions}
         
         selected_q_label = st.selectbox("Wybierz pytanie do edycji", [""] + list(q_list.keys()))
         
         if selected_q_label:
             q = q_list[selected_q_label]
             
-            with st.expander("Statystyki pytania", expanded=False):
+            with st.expander("Statystyki szczegółowe", expanded=False):
                 st.write(f"Zdawalność: **{q.pass_rate}%**")
                 st.write(f"Liczba użyć: {q.total_attempts}")
+                st.write(f"Poprawne odpowiedzi: {q.correct_attempts}")
 
             with st.form("edit_question_form"):
                 new_content = st.text_area("Treść pytania", value=q.content)
@@ -109,7 +110,6 @@ def show_editor_ui():
 
                 new_file = st.file_uploader("Zmień grafikę", type=config.ALLOWED_EXTENSIONS)
                 
-                # Pre-seleckja obecnych grup
                 current_prof_names = [p.name for p in q.professions]
                 current_type_names = [t.name for t in q.test_types]
                 
@@ -144,5 +144,34 @@ def show_editor_ui():
                     session.commit()
                     st.warning("Usunięto pytanie.")
                     st.rerun()
+
+    # --- TABELA ISTNIEJĄCYCH PYTAŃ ---
+    st.divider()
+    st.subheader("📋 Lista pytań i statystyki")
+    
+    if all_questions:
+        # Przygotowanie danych do tabeli (Dataframe)
+        data = []
+        for q in all_questions:
+            data.append({
+                "ID": q.id,
+                "Treść pytania": q.content,
+                "Zdawalność": f"{q.pass_rate}%",
+                "Użyć": q.total_attempts
+            })
+        
+        df = pd.DataFrame(data)
+        # Wyświetlamy jako interaktywną tabelę (możliwość sortowania i szukania)
+        st.dataframe(
+            df, 
+            column_config={
+                "Treść pytania": st.column_config.TextColumn(width="large"),
+                "Zdawalność": st.column_config.TextColumn(width="small"),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+    else:
+        st.info("Baza pytań jest pusta.")
 
     session.close()
