@@ -77,9 +77,38 @@ def user_profile_page():
 def admin_user_management():
     st.header("👥 Zarządzanie Użytkownikami")
     
+    # --- SEKCJA 1: DODAWANIE NOWEGO UŻYTKOWNIKA ---
+    with st.expander("➕ Dodaj Nowego Użytkownika", expanded=False):
+        with st.form("add_user_form"):
+            new_username = st.text_input("Nazwa użytkownika (Login)")
+            new_password = st.text_input("Hasło", type="password")
+            new_role = st.selectbox("Rola", [config.ROLE_USER, config.ROLE_EDITOR, config.ROLE_ADMIN])
+            
+            # Pobranie grup zawodowych do wyboru
+            all_profs = manager.get_all_professions()
+            prof_map = {p.name: p.id for p in all_profs}
+            selected_prof_names = st.multiselect("Przypisz Grupy Zawodowe", list(prof_map.keys()))
+            
+            submit_user = st.form_submit_button("Stwórz Użytkownika")
+            
+            if submit_user:
+                if not new_username or not new_password:
+                    st.error("Login i hasło są wymagane!")
+                else:
+                    sel_ids = [prof_map[name] for name in selected_prof_names]
+                    success, msg = manager.create_user(new_username, new_password, new_role, sel_ids)
+                    if success:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(f"Błąd: {msg}")
+
+    st.divider()
+    
+    # --- SEKCJA 2: LISTA I EDYCJA ---
     users = manager.get_all_users()
     
-    # 1. Lista użytkowników w tabeli
+    st.subheader("Lista Użytkowników")
     user_data = []
     for u in users:
         user_data.append({
@@ -90,35 +119,30 @@ def admin_user_management():
         })
     st.dataframe(pd.DataFrame(user_data), use_container_width=True, hide_index=True)
     
-    st.divider()
-    
-    # 2. Formularz edycji wybranego użytkownika
-    st.subheader("Edytuj użytkownika")
+    st.subheader("Edytuj / Resetuj Hasło")
     user_map = {u.username: u for u in users}
-    selected_username = st.selectbox("Wybierz użytkownika do modyfikacji", list(user_map.keys()))
+    selected_username = st.selectbox("Wybierz użytkownika do modyfikacji", ["-- wybierz --"] + list(user_map.keys()))
     
-    if selected_username:
+    if selected_username != "-- wybierz --":
         target_user = user_map[selected_username]
-        
         col1, col2 = st.columns(2)
         
         with col1:
-            new_role = st.selectbox(
-                "Zmień rolę", 
-                [config.ROLE_ADMIN, config.ROLE_EDITOR, config.ROLE_USER],
-                index=[config.ROLE_ADMIN, config.ROLE_EDITOR, config.ROLE_USER].index(target_user.role)
-            )
+            current_role_idx = [config.ROLE_USER, config.ROLE_EDITOR, config.ROLE_ADMIN].index(target_user.role)
+            new_role_edit = st.selectbox("Zmień rolę", 
+                                        [config.ROLE_USER, config.ROLE_EDITOR, config.ROLE_ADMIN], 
+                                        index=current_role_idx)
             if st.button("Aktualizuj rolę"):
-                manager.update_user_role(target_user.id, new_role)
-                st.success(f"Rola {selected_username} zmieniona na {new_role}")
+                manager.update_user_role(target_user.id, new_role_edit)
+                st.success(f"Rola zmieniona!")
                 st.rerun()
                 
         with col2:
-            new_pass_admin = st.text_input("Resetuj hasło (wpisz nowe)", type="password")
-            if st.button("Zmień hasło użytkownikowi"):
+            new_pass_admin = st.text_input("Resetuj hasło", type="password")
+            if st.button("Zapisz nowe hasło"):
                 if len(new_pass_admin) >= 6:
                     manager.update_user_password(target_user.id, new_pass_admin)
-                    st.success(f"Hasło dla {selected_username} zostało zresetowane.")
+                    st.success(f"Hasło dla {selected_username} zresetowane.")
                 else:
                     st.error("Za krótkie hasło.")
 
