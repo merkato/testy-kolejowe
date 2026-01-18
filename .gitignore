@@ -1,0 +1,15 @@
+# Środowisko wirtualne
+venv/
+.venv/
+
+# Cache Pythona
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pliki środowiskowe (hasła!)
+.env
+
+# Grafiki wgrane przez użytkowników (opcjonalnie, jeśli chcesz mieć puste repo)
+uploads/*
+!uploads/.gitkeep

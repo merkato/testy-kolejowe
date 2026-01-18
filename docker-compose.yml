@@ -1,31 +1,42 @@
 services:
   db-testy:
-    image: mariadb:latest
+    image: mariadb:10.11
     container_name: testy-db
+    restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: your_password
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-strongpassword123}
       MYSQL_DATABASE: testy_db
     volumes:
-      - db_data:/var/lib/mysql
+      - testy_db_data:/var/lib/mysql
+    networks:
+      - internal-testy
 
   app-testy:
     build: .
     container_name: testy
+    restart: always
     ports:
       - "8501:8501"
+    environment:
+      - DB_HOST=db-testy
+      - DB_USER=root
+      - DB_PASSWORD=${DB_PASSWORD:-strongpassword123}
+      - DB_NAME=testy_db
+      - ADMIN_USER=admin
+      - ADMIN_PASS=admin123
     volumes:
       - ./uploads:/app/uploads
     depends_on:
       - db-testy
-    environment:
-      - DB_HOST=db-testy
     networks:
-      - default
-      - npm_network # Sieć, w której pracuje Nginx Proxy Manager
+      - internal-testy
+      - web # Ta sama sieć, której używa Lizmap dla Proxy
 
 networks:
-  npm_network:
+  internal-testy: # Izolowana sieć tylko dla Twojej nowej apki
+    driver: bridge
+  web: # Sieć zewnętrzna Twojego Nginx Proxy Managera
     external: true
 
 volumes:
-  db_data:
+  testy_db_data:
