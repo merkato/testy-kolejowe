@@ -25,6 +25,8 @@ ROLE_ADMIN = "Administrator"
 ROLE_EDITOR = "Edytor"
 ROLE_USER = "Użytkownik"
 
+FOOTER_TEXT = "By SQ9NIT and AJ, 2026. Stworzone z dużą ilością kawy"
+
 # --- WARSTWA WIZUALNA (CSS) ---
 # Optymalizacja pod urządzenia mobilne, jasne tło, pastelowe przyciski
 CUSTOM_CSS = """
@@ -93,6 +95,24 @@ CUSTOM_CSS = """
         background-color: #F3E5F5; /* Pastelowy fiolet */
         color: #4A148C;
         border: none;
+    }
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #ffffff;
+        color: #666666;
+        text-align: center;
+        padding: 10px 0;
+        font-size: 0.8rem;
+        border-top: 1px solid #eeeeee;
+        z-index: 999;
+    }
+    
+    /* Odstęp dla głównego kontentu, żeby stopka go nie zasłaniała */
+    .main-content {
+        margin-bottom: 60px;
     }
 </style>
 """

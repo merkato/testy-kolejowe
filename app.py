@@ -26,9 +26,13 @@ if 'logged_in' not in st.session_state:
 if 'user' not in st.session_state:
     st.session_state.user = None
 
+def render_footer():
+    """Renderuje stopkę na dole strony."""
+    st.markdown(f'<div class="footer">{config.FOOTER_TEXT}</div>', unsafe_allow_html=True)
+
 def login_screen():
     """Ekran logowania."""
-    st.title("🚉 System Testów")
+    st.title("🚉 Testy Kolejowe")
     st.subheader("Zaloguj się, aby kontynuować")
     
     with st.form("login_form"):
@@ -41,10 +45,11 @@ def login_screen():
             if user:
                 st.session_state.logged_in = True
                 st.session_state.user = user
-                st.success("Zalogowano pomyślnie!")
                 st.rerun()
             else:
                 st.error("Nieprawidłowy login lub hasło.")
+    
+    render_footer()  # Wywołanie stopki na ekranie logowania
 
 def admin_user_management():
     """Interfejs zarządzania użytkownikami dla Administratora."""
@@ -70,28 +75,67 @@ def admin_user_management():
                     st.warning("Uzupełnij login i hasło.")
 
 def admin_profession_management():
-    """Interfejs dodawania grup zawodowych."""
-    st.header("🏗️ Grupy Zawodowe i Testy")
+    """Interfejs dodawania grup zawodowych i rodzajów testów z tabelami podglądu."""
+    st.header("🏗️ Zarządzanie Strukturą Systemu")
+    
+    session = db.get_session()
+    
+    # Pobieramy aktualne dane do wyświetlenia w tabelach
+    all_professions = session.query(db.ProfessionGroup).all()
+    all_test_types = session.query(db.TestType).all()
     
     col1, col2 = st.columns(2)
+    
+    # --- KOLUMNA 1: GRUPY ZAWODOWE ---
     with col1:
-        new_prof = st.text_input("Nowa grupa zawodowa (np. Rewident)")
+        st.subheader("Grupy Zawodowe")
+        new_prof = st.text_input("Nazwa nowej grupy (np. Rewident)", key="add_prof_input")
         if st.button("Dodaj Grupę"):
             if new_prof:
-                success, msg = manager.add_new_profession(new_prof)
-                if success: st.success(msg); st.rerun()
-                else: st.error(msg)
-    
+                # Sprawdzenie duplikatu przed próbą zapisu
+                exists = session.query(db.ProfessionGroup).filter_by(name=new_prof).first()
+                if exists:
+                    st.error(f"Grupa '{new_prof}' już istnieje!")
+                else:
+                    session.add(db.ProfessionGroup(name=new_prof))
+                    session.commit()
+                    st.success(f"Dodano grupę: {new_prof}")
+                    st.rerun() # Odświeżenie, aby nowa pozycja pojawiła się w tabeli poniżej
+        
+        st.write("---")
+        st.write("**Istniejące grupy:**")
+        if all_professions:
+            # Wyświetlamy jako prostą listę/tabelę
+            prof_data = [p.name for p in all_professions]
+            st.table(prof_data)
+        else:
+            st.info("Brak zdefiniowanych grup.")
+
+    # --- KOLUMNA 2: RODZAJE TESTÓW ---
     with col2:
-        # Zarządzanie rodzajami testów
-        new_test_type = st.text_input("Nowy rodzaj testu (np. Handlowe)")
+        st.subheader("Rodzaje Testów")
+        new_test_type = st.text_input("Nowy rodzaj testu (np. Sygnalizacja)", key="add_type_input")
         if st.button("Dodaj Rodzaj Testu"):
-            session = db.get_session()
-            session.add(db.TestType(name=new_test_type))
-            session.commit()
-            session.close()
-            st.success("Dodano rodzaj testu.")
-            st.rerun()
+            if new_test_type:
+                # Sprawdzenie duplikatu
+                exists = session.query(db.TestType).filter_by(name=new_test_type).first()
+                if exists:
+                    st.error(f"Rodzaj testu '{new_test_type}' już istnieje!")
+                else:
+                    session.add(db.TestType(name=new_test_type))
+                    session.commit()
+                    st.success(f"Dodano rodzaj testu: {new_test_type}")
+                    st.rerun() # Odświeżenie tabeli
+        
+        st.write("---")
+        st.write("**Istniejące rodzaje testów:**")
+        if all_test_types:
+            type_data = [t.name for t in all_test_types]
+            st.table(type_data)
+        else:
+            st.info("Brak zdefiniowanych rodzajów testów.")
+
+    session.close()
 
 def main():
     if not st.session_state.logged_in:
@@ -123,7 +167,7 @@ def main():
 
     # Routing podstron
     if choice == "🏠 Start":
-        st.title("System Testów Wiedzy Kolejowej")
+        st.title("Testy Kolejowe")
         st.write(f"Zalogowano jako: **{user.role}**")
         st.write("Wybierz opcję z menu po lewej stronie, aby rozpocząć.")
         
@@ -141,6 +185,10 @@ def main():
 
     elif choice == "🏗️ Grupy i Kategorie" and user.role == config.ROLE_ADMIN:
         admin_profession_management()
+    
+    st.markdown('</div>', unsafe_allow_html=True) # Zamknięcie kontenera treści
+    
+    render_footer()
 
 if __name__ == "__main__":
     main()

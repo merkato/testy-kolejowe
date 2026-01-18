@@ -7,7 +7,8 @@ services:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-strongpassword123}
       MYSQL_DATABASE: testy_db
     volumes:
-      - testy_db_data:/var/lib/mysql
+      # Mapujemy folder ./db_data na dysku serwera do kontenera
+      - ./db_data:/var/lib/mysql 
     networks:
       - internal-testy
 
@@ -22,21 +23,18 @@ services:
       - DB_USER=root
       - DB_PASSWORD=${DB_PASSWORD:-strongpassword123}
       - DB_NAME=testy_db
-      - ADMIN_USER=admin
-      - ADMIN_PASS=admin123
     volumes:
+      # Mapujemy folder ./uploads na dysku serwera
       - ./uploads:/app/uploads
     depends_on:
       - db-testy
     networks:
       - internal-testy
-      - web # Ta sama sieć, której używa Lizmap dla Proxy
+      - web
 
 networks:
-  internal-testy: # Izolowana sieć tylko dla Twojej nowej apki
+  internal-testy:
     driver: bridge
-  web: # Sieć zewnętrzna Twojego Nginx Proxy Managera
+  web:
     external: true
-
-volumes:
-  testy_db_data:
+    name: lizmap-dc-ssl_default
