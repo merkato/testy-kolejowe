@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 import config
 import db
 import manager
