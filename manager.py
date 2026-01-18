@@ -4,11 +4,9 @@ from db import get_session, User, ProfessionGroup, TestType
 import config
 
 def hash_password(password):
-    """Zmienia hasło na bezpieczny hash (zawsze zwraca string 60 znaków)."""
-    # Generujemy sól i hash
+    """Zmienia czyste hasło na bezpieczny hash."""
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-    # Zwracamy jako string, aby SQLAlchemy mogło to zapisać w VARCHAR
     return hashed.decode('utf-8')
 
 def init_system_data():
@@ -65,28 +63,22 @@ def create_user(username, password, role, profession_ids=None):
         session.close()
 
 def authenticate_user(username, password):
-    """Weryfikuje użytkownika i przygotowuje obiekt do pracy w Streamlit."""
+    """Logowanie - używamy poprawnej nazwy pola: password_hash."""
     session = get_session()
     try:
-        # Pobieramy użytkownika wraz z relacjami (joinedload zapobiega DetachedInstanceError)
+        # Pobieramy usera z relacjami
         user = session.query(User).options(joinedload(User.professions)).filter_by(username=username).first()
         
-        if user:
-            # Sprawdzamy hasło: bcrypt.checkpw(hasło_wpisane, hasło_z_bazy)
-            if bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
-                # 1. Odłączamy obiekt od sesji (aby żył w st.session_state)
+        if user and user.password_hash: # <-- Tutaj zmiana na password_hash
+            # Weryfikacja bcrypt
+            if bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
                 session.expunge(user)
-                # 2. Zwracamy obiekt - logowanie udane
                 return user
-        
-        # Jeśli nie ma użytkownika LUB hasło jest błędne
         return None
-        
     except Exception as e:
-        print(f"Błąd autoryzacji: {e}")
+        print(f"Błąd logowania: {e}")
         return None
     finally:
-        # Zawsze zamykamy sesję na końcu
         session.close()
 
 def update_user_password(user_id, new_password):
