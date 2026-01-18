@@ -1,5 +1,5 @@
 import bcrypt
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from db import get_session, User, ProfessionGroup, TestType
 import config
 
@@ -104,10 +104,11 @@ def update_user_role(user_id, new_role):
         session.close()
 
 def get_all_users():
-    """Zwraca listę wszystkich użytkowników."""
+    """Zwraca listę wszystkich użytkowników wraz z ich grupami (Eager Loading)."""
     session = get_session()
     try:
-        return session.query(User).all()
+        # Używamy options(joinedload(...)), aby pobrać relację od razu
+        return session.query(User).options(joinedload(User.professions)).all()
     finally:
         session.close()
 
