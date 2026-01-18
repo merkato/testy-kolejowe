@@ -1,0 +1,16 @@
+# Dane bazy i grafiki (wolumeny)
+db_data/
+uploads/
+backups/
+
+# Środowisko lokalne
+venv/
+.venv/
+.env
+
+# Śmieci systemowe i Pythonowe
+__pycache__/
+*.pyc
+.git
+.gitignore
+.vscode/
