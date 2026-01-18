@@ -1,5 +1,6 @@
 import streamlit as st
 import random
+import os  # Dodany brakujący import
 from PIL import Image
 from db import get_session, Question, ProfessionGroup, TestType, update_question_stats
 import config
@@ -7,10 +8,10 @@ import config
 def init_test_state():
     """Inicjalizacja zmiennych sesyjnych dla testu."""
     if 'test_questions' not in st.session_state:
-        st.session_state.test_questions = [] # Lista 30 obiektów pytań
-        st.session_state.user_answers = {}    # {idx: 'A'/'B'/'C'}
+        st.session_state.test_questions = []
+        st.session_state.user_answers = {}
         st.session_state.current_idx = 0
-        st.session_state.test_phase = 'setup' # setup, testing, finished, review
+        st.session_state.test_phase = 'setup'
         st.session_state.results_calculated = False
 
 def draw_questions(profession_id, test_type_id):
@@ -26,9 +27,8 @@ def draw_questions(profession_id, test_type_id):
         return []
 
     if len(pool) >= 30:
-        return random.sample(pool, 30) # Bez powtórzeń
+        return random.sample(pool, 30)
     else:
-        # Losuj z powtórzeniami, aż będzie 30
         return random.choices(pool, k=30)
 
 def finish_test():
@@ -39,7 +39,6 @@ def finish_test():
         is_correct = (user_ans == q.correct_ans)
         if is_correct:
             correct_count += 1
-        # Aktualizacja statystyk w DB
         update_question_stats(q.id, is_correct)
     
     st.session_state.score = correct_count
@@ -54,7 +53,6 @@ def show_test_ui():
         st.title("📝 Rozpocznij nowy test")
         session = get_session()
         profs = session.query(ProfessionGroup).all()
-        # Filtracja grup dla zwykłego użytkownika (z implementacji manager.py/app.py)
         user_profs = st.session_state.user.professions if st.session_state.user.role == config.ROLE_USER else profs
         
         prof_opt = {p.name: p.id for p in user_profs}
@@ -79,14 +77,15 @@ def show_test_ui():
         q = st.session_state.test_questions[idx]
 
         st.subheader(f"Pytanie {idx + 1} z 30")
-       if q.image_path and os.path.exists(q.image_path):
+        
+        # Logika wyświetlania grafiki (poprawione wcięcia)
+        if q.image_path and os.path.exists(q.image_path):
             img = Image.open(q.image_path)
             img.thumbnail((config.QUESTION_IMAGE_SIZE, config.QUESTION_IMAGE_SIZE))
             st.image(img)
         
         st.write(f"### {q.content}")
         
-        # Opcje odpowiedzi
         options = {"A": q.ans_a, "B": q.ans_b, "C": q.ans_c}
         current_choice = st.session_state.user_answers.get(idx)
         
@@ -97,21 +96,17 @@ def show_test_ui():
 
         col1, col2 = st.columns(2)
 
-        # Przycisk Odpowiedź (aktywny tylko po zaznaczeniu)
         if col1.button("Zatwierdź Odpowiedź", disabled=(choice is None), use_container_width=True):
             st.session_state.user_answers[idx] = choice
-            # Szukaj następnego pytania bez odpowiedzi
             next_idx = next((i for i in range(30) if i not in st.session_state.user_answers), None)
             if next_idx is not None:
                 st.session_state.current_idx = next_idx
             st.rerun()
 
-        # Przycisk Pomiń
         if col2.button("Pomiń", use_container_width=True):
             st.session_state.current_idx = (idx + 1) % 30
             st.rerun()
 
-        # Jeśli na wszystkie odpowiedziano
         if len(st.session_state.user_answers) == 30:
             st.divider()
             c1, c2 = st.columns(2)
@@ -123,12 +118,18 @@ def show_test_ui():
                 st.session_state.current_idx = 0
                 st.rerun()
 
-    # --- FAZA 3: PRZEGLĄD (Przed zakończeniem) ---
+    # --- FAZA 3: PRZEGLĄD ---
     elif st.session_state.test_phase == 'review':
         idx = st.session_state.current_idx
         q = st.session_state.test_questions[idx]
         st.subheader(f"Przegląd - Pytanie {idx + 1}")
         
+        # Podgląd grafiki również w trybie przeglądu
+        if q.image_path and os.path.exists(q.image_path):
+            img = Image.open(q.image_path)
+            img.thumbnail((config.QUESTION_IMAGE_SIZE, config.QUESTION_IMAGE_SIZE))
+            st.image(img)
+
         options = {"A": q.ans_a, "B": q.ans_b, "C": q.ans_c}
         current_val = st.session_state.user_answers.get(idx)
         
@@ -156,16 +157,19 @@ def show_test_ui():
         st.title("📊 Wynik Testu")
         score = st.session_state.score
         percent = round((score / 30) * 100, 1)
-        
         st.metric("Poprawne odpowiedzi", f"{score} / 30", f"{percent}%")
         
         st.subheader("Błędne odpowiedzi i komentarze:")
-        
         for i, q in enumerate(st.session_state.test_questions):
             user_ans = st.session_state.user_answers.get(i)
             if user_ans != q.correct_ans:
                 with st.container(border=True):
                     st.write(f"**Pytanie:** {q.content}")
+                    # Podgląd grafiki w wynikach (opcjonalnie mniejszy)
+                    if q.image_path and os.path.exists(q.image_path):
+                        img = Image.open(q.image_path)
+                        img.thumbnail((100, 100))
+                        st.image(img)
                     st.markdown(f"Twoja odpowiedź: <span class='wrong-ans'>{user_ans}</span>", unsafe_allow_html=True)
                     st.markdown(f"Poprawna odpowiedź: <span class='correct-ans'>{q.correct_ans}</span>", unsafe_allow_html=True)
                     if q.comment:
@@ -173,6 +177,6 @@ def show_test_ui():
 
         if st.button("Wyjdź do menu głównego"):
             for key in list(st.session_state.keys()):
-                if key not in ['user', 'logged_in']: # Zachowaj sesję użytkownika
+                if key not in ['user', 'logged_in']:
                     del st.session_state[key]
             st.rerun()
