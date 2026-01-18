@@ -13,17 +13,14 @@ def init_system_data():
     """Inicjalizuje grupy zawodowe i konto administratora przy pierwszym uruchomieniu."""
     session = get_session()
     try:
-        # 1. Inicjalizacja Grup Zawodowych
         for prof_name in config.DEFAULT_PROFESSIONS:
             exists = session.query(ProfessionGroup).filter_by(name=prof_name).first()
             if not exists:
                 session.add(ProfessionGroup(name=prof_name))
         
-        # 2. Inicjalizacja domyślnego Rodzaju Testu (opcjonalnie)
         if not session.query(TestType).first():
             session.add(TestType(name="Ogólny"))
 
-        # 3. Inicjalizacja Administratora
         admin_exists = session.query(User).filter_by(role=config.ROLE_ADMIN).first()
         if not admin_exists:
             hashed_pw = hash_password(config.DEFAULT_ADMIN_PASS)
@@ -33,7 +30,6 @@ def init_system_data():
                 role=config.ROLE_ADMIN
             )
             session.add(admin)
-            print(f"Utworzono domyślne konto administratora: {config.DEFAULT_ADMIN_USER}")
         
         session.commit()
     except Exception as e:
@@ -63,14 +59,10 @@ def create_user(username, password, role, profession_ids=None):
         session.close()
 
 def authenticate_user(username, password):
-    """Logowanie - używamy poprawnej nazwy pola: password_hash."""
     session = get_session()
     try:
-        # Pobieramy usera z relacjami
         user = session.query(User).options(joinedload(User.professions)).filter_by(username=username).first()
-        
-        if user and user.password_hash: # <-- Tutaj zmiana na password_hash
-            # Weryfikacja bcrypt
+        if user and user.password_hash:
             if bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
                 session.expunge(user)
                 return user
@@ -82,20 +74,23 @@ def authenticate_user(username, password):
         session.close()
 
 def update_user_password(user_id, new_password):
-    """Zmienia hasło użytkownika (z hashowaniem)."""
+    """Zmienia hasło użytkownika - poprawiona nazwa kolumny."""
     session = get_session()
     try:
         user = session.query(User).filter_by(id=user_id).first()
         if user:
-            user.password = hash_password(new_password)
+            # KLUCZOWA POPRAWKA: password_hash zamiast password
+            user.password_hash = hash_password(new_password)
             session.commit()
             return True
+        return False
+    except Exception:
+        session.rollback()
         return False
     finally:
         session.close()
 
 def update_user_role(user_id, new_role):
-    """Zmienia rolę użytkownika."""
     session = get_session()
     try:
         user = session.query(User).filter_by(id=user_id).first()
@@ -108,29 +103,14 @@ def update_user_role(user_id, new_role):
         session.close()
 
 def get_all_users():
-    """Zwraca listę wszystkich użytkowników wraz z ich grupami (Eager Loading)."""
     session = get_session()
     try:
-        # Używamy options(joinedload(...)), aby pobrać relację od razu
         return session.query(User).options(joinedload(User.professions)).all()
     finally:
         session.close()
 
 def get_all_professions():
-    """Pobiera listę wszystkich grup zawodowych."""
     session = get_session()
     profs = session.query(ProfessionGroup).all()
     session.close()
     return profs
-
-def add_new_profession(name):
-    """Dodaje nową grupę zawodową (tylko dla Admina)."""
-    session = get_session()
-    try:
-        if session.query(ProfessionGroup).filter_by(name=name).first():
-            return False, "Grupa już istnieje."
-        session.add(ProfessionGroup(name=name))
-        session.commit()
-        return True, "Dodano grupę."
-    finally:
-        session.close()
