@@ -3,6 +3,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.utils import ImageReader
 from PIL import Image as PILImage
 import io
 import os
@@ -20,14 +21,25 @@ def get_font_name():
     return 'Helvetica'
 
 def draw_header(c, width, height, font_name, title, logo_file=None):
-    """Rysuje nagłówek arkusza z opcjonalnym logo."""
+    """Rysuje nagłówek arkusza z poprawioną obsługą logo."""
     if logo_file:
-        img = PILImage.open(logo_file)
-        img_w, img_h = img.size
-        aspect = img_h / img_w
-        display_w = 2.5 * cm
-        display_h = display_w * aspect
-        c.drawImage(logo_file, width - 3.5 * cm, height - 2.5 * cm, width=display_w, height=display_h, mask='auto')
+        try:
+            # KLUCZOWA POPRAWKA:
+            # Streamlit UploadedFile musi być opakowany w ImageReader
+            logo_img = ImageReader(logo_file)
+            
+            # Pobieramy rozmiar obrazu do obliczenia proporcji
+            img_w, img_h = logo_img.getSize()
+            aspect = img_h / img_w
+            display_w = 2.5 * cm
+            display_h = display_w * aspect
+            
+            # Rysujemy używając ImageReader
+            c.drawImage(logo_img, width - 3.5 * cm, height - 2.5 * cm, 
+                        width=display_w, height=display_h, mask='auto')
+        except Exception as e:
+            # Jeśli logo jest uszkodzone, wypisz błąd w logach, ale nie przerywaj PDF
+            print(f"Problem z logotypem: {e}")
 
     c.setFont(font_name, 16)
     c.drawCentredString(width / 2, height - 2 * cm, title)

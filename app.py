@@ -315,19 +315,14 @@ def main():
         
         if user.role == config.ROLE_USER:
             st.info(f"Twoje uprawnienia obejmują grupy: {', '.join([p.name for p in user.professions])}")
-
     elif choice == "📝 Rozwiąż Test":
         test.show_test_ui()
-
     elif choice == "🛠️ Edytor Pytań":
         edytor.show_editor_ui()
-    
     elif choice == "🖨️ Generator PDF" and user.role in [config.ROLE_ADMIN, config.ROLE_EDITOR]:
         show_pdf_generator()
-    
     elif choice == "👥 Użytkownicy" and user.role == config.ROLE_ADMIN:
         admin_user_management()
-
     elif choice == "🏗️ Grupy i Kategorie" and user.role == config.ROLE_ADMIN:
         admin_profession_management()
     elif choice == "👤 Profil":
