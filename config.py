@@ -30,90 +30,73 @@ FOOTER_TEXT = "By SQ9NIT and AJ, 2026. Stworzone z dużą ilością kawy"
 # --- WARSTWA WIZUALNA (CSS) ---
 # Optymalizacja pod urządzenia mobilne, jasne tło, pastelowe przyciski
 QUESTION_IMAGE_SIZE = 200
+# config.py
+
 CUSTOM_CSS = """
 <style>
-    /* Globalne ustawienia tła i tekstu */
+    /* Główny kontener - jasne tło i ciemny tekst */
     .stApp {
-        background-color: #ffffff;
-        color: #000000;
+        background-color: #f8f9fa !important;
+        color: #1a1a1a !important;
     }
 
-    /* Stylizacja przycisków - pastele */
+    /* Wszystkie etykiety (Labels) i nagłówki */
+    label, p, h1, h2, h3, .stMarkdown {
+        color: #1a1a1a !important;
+    }
+
+    /* Pola input (tekstowe, liczbowe, hasła) */
+    div[data-baseweb="input"] {
+        background-color: #ffffff !important;
+        border: 1px solid #ced4da !important;
+    }
+    
+    input {
+        color: #1a1a1a !important; /* Wymuszenie czarnego tekstu w polach */
+        -webkit-text-fill-color: #1a1a1a !important; /* Dla Chrome w Windows */
+    }
+
+    /* Selectboxy (listy rozwijane) */
+    div[data-baseweb="select"] {
+        background-color: #ffffff !important;
+    }
+    
+    div[data-baseweb="select"] div {
+        color: #1a1a1a !important;
+    }
+
+    /* Przyciski */
     .stButton>button {
-        background-color: #E3F2FD; /* Jasny błękit pastelowy */
-        color: #0D47A1;
-        border-radius: 12px;
-        border: 1px solid #BBDEFB;
-        font-weight: 600;
-        height: 3em;
-        width: 100%;
-        transition: all 0.3s ease;
-    }
-
-    .stButton>button:hover {
-        background-color: #BBDEFB;
-        border-color: #90CAF9;
-    }
-
-    /* Przyciski typu 'Primary' (np. Zakończ Test, Usuń) */
-    .stButton>button[kind="primary"] {
-        background-color: #FFEBEE; /* Jasny róż pastelowy */
-        color: #C62828;
-        border: 1px solid #FFCDD2;
-    }
-
-    /* Kolory wyników w podsumowaniu testu */
-    .correct-ans {
-        color: #000080 !important; /* Navy Blue */
-        font-weight: bold;
-        background-color: #E8F5E9;
-        padding: 2px 5px;
-        border-radius: 4px;
-    }
-
-    .wrong-ans {
-        color: #D32F2F !important; /* Red */
-        font-weight: bold;
-        background-color: #FFEBEE;
-        padding: 2px 5px;
-        border-radius: 4px;
-    }
-
-    /* Optymalizacja pod mobile - większe odstępy w radio buttons */
-    .stRadio [data-testid="stWidgetLabel"] p {
-        font-size: 1.1rem;
-        font-weight: bold;
-        margin-bottom: 10px;
-    }
-
-    div[data-testid="stMarkdownContainer"] p {
-        font-size: 1rem;
-        line-height: 1.6;
-    }
-
-    /* Styl dla sekcji komentarza/interpretacji */
-    .stInfo {
-        background-color: #F3E5F5; /* Pastelowy fiolet */
-        color: #4A148C;
+        background-color: #004a99 !important;
+        color: white !important;
+        border-radius: 5px;
         border: none;
     }
+    
+    .stButton>button:hover {
+        background-color: #003366 !important;
+        color: #ffffff !important;
+    }
+
+    /* Kontenery formularzy */
+    [data-testid="stForm"] {
+        background-color: #ffffff !important;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    /* Stopka */
     .footer {
         position: fixed;
         left: 0;
         bottom: 0;
         width: 100%;
-        background-color: #ffffff;
-        color: #666666;
+        background-color: #f1f1f1;
+        color: #666666 !important;
         text-align: center;
-        padding: 10px 0;
-        font-size: 0.8rem;
-        border-top: 1px solid #eeeeee;
-        z-index: 999;
-    }
-    
-    /* Odstęp dla głównego kontentu, żeby stopka go nie zasłaniała */
-    .main-content {
-        margin-bottom: 60px;
+        padding: 10px;
+        font-size: 12px;
     }
 </style>
 """
