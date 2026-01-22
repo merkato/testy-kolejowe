@@ -98,5 +98,23 @@ CUSTOM_CSS = """
         padding: 10px;
         font-size: 12px;
     }
+    /* Naprawa kontrastu tekstu na przyciskach */
+    div.stButton > button {
+        background-color: #004a99 !important;
+        color: white !important; /* Biały tekst zawsze! */
+        border-radius: 5px;
+        font-weight: 600;
+    }
+
+    /* Przycisk wyloguj - czerwony akcent */
+    [data-testid="stSidebar"] div.stButton > button {
+        background-color: #c0392b !important;
+        color: white !important;
+    }
+
+    /* Poprawa czytelności w sidebarze */
+    [data-testid="stSidebar"] {
+        color: #1c1c1c;
+    }
 </style>
 """

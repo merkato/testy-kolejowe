@@ -14,6 +14,14 @@ def init_test_state():
         st.session_state.test_phase = 'setup'
         st.session_state.results_calculated = False
 
+def st_responsive_image(path, caption=None):
+    """Wyświetla obraz: 60% na komputerze, 100% na telefonie."""
+    # Proporcje [lewo, środek, prawo]
+    # Na telefonie Streamlit zmieni to w 100% szerokości dla każdej kolumny
+    col1, col2, col3 = st.columns([0.2, 0.6, 0.2])
+    with col2:
+        st.image(path, caption=caption, use_container_width=True)
+
 def draw_questions(profession_id, test_type_id):
     """Logika losowania 30 pytań zgodnie z wymaganiami."""
     session = get_session()
@@ -82,7 +90,7 @@ def show_test_ui():
         if q.image_path and os.path.exists(q.image_path):
             img = Image.open(q.image_path)
             img.thumbnail((config.QUESTION_IMAGE_SIZE, config.QUESTION_IMAGE_SIZE))
-            st.image(img)
+            st_responsive_image(img)
         
         st.write(f"### {q.content}")
         
@@ -128,7 +136,7 @@ def show_test_ui():
         if q.image_path and os.path.exists(q.image_path):
             img = Image.open(q.image_path)
             img.thumbnail((config.QUESTION_IMAGE_SIZE, config.QUESTION_IMAGE_SIZE))
-            st.image(img)
+            st_responsive_image(img)
 
         options = {"A": q.ans_a, "B": q.ans_b, "C": q.ans_c}
         current_val = st.session_state.user_answers.get(idx)
@@ -169,7 +177,7 @@ def show_test_ui():
                     if q.image_path and os.path.exists(q.image_path):
                         img = Image.open(q.image_path)
                         img.thumbnail((100, 100))
-                        st.image(img)
+                        st_responsive_image(img)
                     st.markdown(f"Twoja odpowiedź: <span class='wrong-ans'>{user_ans}</span>", unsafe_allow_html=True)
                     st.markdown(f"Poprawna odpowiedź: <span class='correct-ans'>{q.correct_ans}</span>", unsafe_allow_html=True)
                     if q.comment:

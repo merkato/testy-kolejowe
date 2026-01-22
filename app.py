@@ -279,6 +279,7 @@ def show_pdf_generator():
                         )
                 else:
                     st.error("Nie znaleziono żadnych pytań spełniających wybrane kryteria.")
+
 def main():
     if not st.session_state.logged_in:
         login_screen()
