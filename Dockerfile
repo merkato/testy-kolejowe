@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Instalacja zależności systemowych
-RUN pt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y \
     fonts-freefont-ttf \
     libfreetype6-dev \
     libjpeg-dev \
