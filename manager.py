@@ -129,7 +129,7 @@ def get_balanced_questions(profession_id, topic_ids, total_count):
         # Określamy ile pytań wziąć z tej kategorii
         count_to_take = questions_per_topic + (1 if i < remainder else 0)
         
-        query = session.query(UserQuestion).join(UserQuestion.professions).join(UserQuestion.test_types)
+        query = session.query(Question).join(Question.professions).join(Question.test_types)
         query = query.filter(ProfessionGroup.id == profession_id)
         query = query.filter(TestType.id == t_id)
         
