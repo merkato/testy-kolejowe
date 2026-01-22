@@ -2,7 +2,7 @@ import bcrypt
 import random
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Session, joinedload
-from db import get_session, User, ProfessionGroup, TestType
+from db import get_session, User, ProfessionGroup, TestType, Question
 import config
 
 def hash_password(password):
@@ -120,23 +120,31 @@ def get_all_professions():
 def get_balanced_questions(profession_id, topic_ids, total_count):
     """Pobiera zbalansowaną liczbę pytań z wybranych kategorii."""
     session = get_session()
-    questions_per_topic = total_count // len(topic_ids)
-    remainder = total_count % len(topic_ids)
-    
     final_questions = []
     
-    for i, t_id in enumerate(topic_ids):
-        # Określamy ile pytań wziąć z tej kategorii
-        count_to_take = questions_per_topic + (1 if i < remainder else 0)
-        
-        query = session.query(Question).join(Question.professions).join(Question.test_types)
-        query = query.filter(ProfessionGroup.id == profession_id)
-        query = query.filter(TestType.id == t_id)
-        
-        # Losowanie po stronie bazy danych dla wydajności
-        topic_pool = query.order_by(func.rand()).limit(count_to_take).all()
-        final_questions.extend(topic_pool)
-        
-    session.close()
-    random.shuffle(final_questions) # Mieszamy, żeby nie były pogrupowane kategoriami
-    return final_questions
+    if not topic_ids:
+        return []
+
+    # Obliczamy bazową liczbę pytań na kategorię
+    questions_per_topic = total_count // len(topic_ids)
+    remainder = total_count % len(topic_ids)
+
+    try:
+        for i, t_id in enumerate(topic_ids):
+            num_to_take = questions_per_topic + (1 if i < remainder else 0)
+            
+            # Filtrowanie dla relacji Many-to-Many
+            query = session.query(Question).filter(
+                Question.professions.any(id=profession_id),
+                Question.test_types.any(id=t_id)
+            ).order_by(func.rand()).limit(num_to_take)
+            
+            final_questions.extend(query.all())
+            
+        random.shuffle(final_questions)
+        return final_questions
+    except Exception as e:
+        print(f"Błąd losowania: {e}")
+        return []
+    finally:
+        session.close()

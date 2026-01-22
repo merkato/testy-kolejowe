@@ -65,8 +65,11 @@ class Question(Base):
     id = Column(Integer, primary_key=True)
     content = Column(Text, nullable=False)
     ans_a = Column(String(500), nullable=False)
+    image_a = Column(String(255), nullable=True)  # Ilustracja do odp A
     ans_b = Column(String(500), nullable=False)
+    image_b = Column(String(255), nullable=True)  # Ilustracja do odp B
     ans_c = Column(String(500), nullable=False)
+    image_c = Column(String(255), nullable=True)  # Ilustracja do odp B
     correct_ans = Column(String(1), nullable=False) # A, B lub C
     image_path = Column(String(255), nullable=True) # Ścieżka do pliku w /uploads
     comment = Column(Text, nullable=True)
