@@ -211,46 +211,74 @@ def admin_profession_management():
     session.close()
 
 def show_pdf_generator():
-    st.header("🖨️ Generator Arkuszy Testowych PDF")
+    st.header("🖨️ Generator Arkuszy PDF")
     st.write("Skonfiguruj parametry arkusza egzaminacyjnego do druku.")
     
-    # 1. Wybór parametrów
-    profs = manager.get_all_professions()
+    # Pobieramy dane z bazy
+    all_profs = manager.get_all_professions()
+    # Pobieramy rodzaje testów (tematy)
     session = db.get_session()
-    topics = session.query(db.TestType).all()
+    all_topics = session.query(db.TestType).all()
     session.close()
 
+    # Tworzymy słowniki mapujące Nazwa -> ID, aby Streamlit operował na prostych typach
+    prof_map = {p.name: p.id for p in all_profs}
+    topic_map = {t.name: t.id for t in all_topics}
+
     col1, col2 = st.columns(2)
+    
     with col1:
-        selected_prof = st.selectbox("Grupa zawodowa", profs, format_func=lambda x: x.name)
-        count = st.number_input("Całkowita liczba pytań", min_value=1, max_value=100, value=30)
+        selected_prof_name = st.selectbox("Grupa zawodowa", list(prof_map.keys()))
+        selected_prof_id = prof_map[selected_prof_name]
+        
+        count = st.number_input("Całkowita liczba pytań", min_value=1, max_value=200, value=30)
     
     with col2:
-        selected_topics = st.multiselect("Kategorie tematyczne (losowanie równomierne)", topics, format_func=lambda x: x.name)
+        # Używamy list nazw jako opcji - to naprawi problem z wybieraniem
+        selected_topic_names = st.multiselect(
+            "Kategorie tematyczne (rodzaje testu)", 
+            options=list(topic_map.keys()),
+            help="Wybierz jedną lub więcej kategorii. Pytania zostaną rozdzielone równomiernie."
+        )
         logo_file = st.file_uploader("Wgraj logotyp (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
 
-    # 2. Generowanie
-    if st.button("Przygotuj arkusz PDF"):
-        if not selected_topics:
-            st.error("Proszę wybrać przynajmniej jedną kategorię tematyczną.")
-        else:
-            topic_ids = [t.id for t in selected_topics]
-            # Pobranie zbalansowanych pytań (funkcja dodana wcześniej do manager.py)
-            questions = manager.get_balanced_questions(selected_prof.id, topic_ids, count)
-            
-            if questions:
-                pdf_output = pdf_service.create_test_pdf(questions, selected_prof.name, logo_file)
-                st.success(f"Pomyślnie wygenerowano arkusz z {len(questions)} pytaniami.")
-                
-                st.download_button(
-                    label="📥 Pobierz gotowy PDF",
-                    data=pdf_output,
-                    file_name=f"Egzamin_{selected_prof.name}_{count}pytan.pdf",
-                    mime="application/pdf"
-                )
-            else:
-                st.error("Brak pytań spełniających wybrane kryteria w bazie.")
+    st.divider()
 
+    if st.button("Przygotuj arkusze"):
+        if not selected_topic_names:
+            st.error("Proszę wybrać przynajmniej jedną kategorię tematyczną (Rodzaj testu)!")
+        else:
+            # Zamieniamy wybrane nazwy na ID
+            selected_topic_ids = [topic_map[name] for name in selected_topic_names]
+            
+            with st.spinner("Losowanie pytań i generowanie plików..."):
+                # Pobranie pytań z manager.py
+                questions = manager.get_balanced_questions(selected_prof_id, selected_topic_ids, count)
+                
+                if questions:
+                    # Generowanie dwóch osobnych plików PDF
+                    paper_pdf = pdf_service.create_test_paper_pdf(questions, selected_prof_name, logo_file)
+                    key_pdf = pdf_service.create_answer_key_pdf(questions, selected_prof_name)
+                    
+                    st.success(f"Pomyślnie wygenerowano arkusz z {len(questions)} pytaniami.")
+                    
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.download_button(
+                            label="📥 Pobierz ARKUSZ PYTAŃ",
+                            data=paper_pdf,
+                            file_name=f"Egzamin_{selected_prof_name.replace(' ', '_')}.pdf",
+                            mime="application/pdf"
+                        )
+                    with c2:
+                        st.download_button(
+                            label="🔑 Pobierz KLUCZ ODPOWIEDZI",
+                            data=key_pdf,
+                            file_name=f"Klucz_{selected_prof_name.replace(' ', '_')}.pdf",
+                            mime="application/pdf"
+                        )
+                else:
+                    st.error("Nie znaleziono żadnych pytań spełniających wybrane kryteria.")
 def main():
     if not st.session_state.logged_in:
         login_screen()
