@@ -8,10 +8,36 @@ from PIL import Image as PILImage
 import io
 import os
 
+# --- KONFIGURACJA MARGINESÓW ---
+MARGIN = 1 * cm
+WIDTH, HEIGHT = A4
+
+class NumberedCanvas(canvas.Canvas):
+    """Klasa obsługująca numerację stron typu 'Strona x z y'."""
+    def __init__(self, *args, **kwargs):
+        canvas.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._start_new_page()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        font_name = get_font_name()
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(num_pages, font_name)
+            canvas.Canvas.showPage(self)
+        canvas.Canvas.save(self)
+
+    def draw_page_number(self, page_count, font_name):
+        self.setFont(font_name, 9)
+        # Numeracja w dolnym prawym rogu, zachowując margines 1cm
+        self.drawRightString(WIDTH - MARGIN, MARGIN / 2, f"Strona {self._pageNumber} z {page_count}")
+
 def get_font_name():
-    """Rejestruje i zwraca nazwę czcionki obsługującej polskie znaki."""
     try:
-        # Ścieżka standardowa dla kontenerów debianopodobnych (Ubuntu/slim)
         font_path = '/usr/share/fonts/truetype/freefont/FreeSans.ttf'
         if os.path.exists(font_path):
             pdfmetrics.registerFont(TTFont('FreeSans', font_path))
@@ -20,87 +46,77 @@ def get_font_name():
         pass
     return 'Helvetica'
 
-def draw_header(c, width, height, font_name, title, logo_file=None):
-    """Rysuje nagłówek arkusza z poprawioną obsługą logo."""
+def draw_first_page_header(c, font_name, title, logo_file=None):
+    """Nagłówek wyświetlany TYLKO na pierwszej stronie."""
+    # Logo w prawym górnym rogu (1cm od krawędzi)
     if logo_file:
         try:
-            # KLUCZOWA POPRAWKA:
-            # Streamlit UploadedFile musi być opakowany w ImageReader
             logo_img = ImageReader(logo_file)
-            
-            # Pobieramy rozmiar obrazu do obliczenia proporcji
             img_w, img_h = logo_img.getSize()
             aspect = img_h / img_w
-            display_w = 2.5 * cm
+            display_w = 3 * cm
             display_h = display_w * aspect
-            
-            # Rysujemy używając ImageReader
-            c.drawImage(logo_img, width - 3.5 * cm, height - 2.5 * cm, 
+            c.drawImage(logo_img, WIDTH - MARGIN - display_w, HEIGHT - MARGIN - display_h + 0.5*cm, 
                         width=display_w, height=display_h, mask='auto')
-        except Exception as e:
-            # Jeśli logo jest uszkodzone, wypisz błąd w logach, ale nie przerywaj PDF
-            print(f"Problem z logotypem: {e}")
+        except:
+            pass
 
     c.setFont(font_name, 16)
-    c.drawCentredString(width / 2, height - 2 * cm, title)
+    c.drawCentredString(WIDTH / 2, HEIGHT - MARGIN - 1 * cm, title)
     c.setFont(font_name, 10)
-    c.drawString(2 * cm, height - 3 * cm, "Imię i nazwisko: ............................................................ Data: ....................")
-    c.line(2 * cm, height - 3.2 * cm, width - 2 * cm, height - 3.2 * cm)
+    # Pola na dane (zachowując 1cm marginesu z lewej i prawej)
+    c.drawString(MARGIN, HEIGHT - MARGIN - 2.5 * cm, "Imię i nazwisko: ............................................................ Data: ....................")
+    c.line(MARGIN, HEIGHT - MARGIN - 2.7 * cm, WIDTH - MARGIN, HEIGHT - MARGIN - 2.7 * cm)
 
 def create_test_paper_pdf(questions, profession_name, logo_file=None):
-    """Generuje PDF z samymi pytaniami i ilustracjami."""
     buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    # Używamy NumberedCanvas zamiast zwykłego canvas.Canvas
+    c = NumberedCanvas(buffer, pagesize=A4)
     font_name = get_font_name()
     
     title = f"Arkusz Egzaminacyjny: {profession_name}"
-    draw_header(c, width, height, font_name, title, logo_file)
+    draw_first_page_header(c, font_name, title, logo_file)
     
-    y = height - 4.5 * cm
+    # Start pozycji Y na pierwszej stronie (niżej przez nagłówek)
+    y = HEIGHT - MARGIN - 4 * cm
     
     for i, q in enumerate(questions):
-        # Sprawdzenie miejsca na stronie (bezpieczny margines dla pytania z obrazkiem)
+        # Sprawdzanie miejsca na stronie
         needed_space = 2 * cm
         if q.image_path: needed_space += 5 * cm
         if q.image_a or q.image_b or q.image_c: needed_space += 4 * cm
         
         if y < needed_space:
             c.showPage()
-            draw_header(c, width, height, font_name, title, logo_file)
-            y = height - 4.5 * cm
+            # Na kolejnych stronach startujemy od górnego marginesu (brak nagłówka)
+            y = HEIGHT - MARGIN - 1 * cm
 
-        # Treść pytania
+        # Treść pytania (zawijanie tekstu na szerokość WIDTH - 2*MARGIN)
         c.setFont(font_name, 11)
-        c.drawString(2 * cm, y, f"{i+1}. {q.content}")
+        c.drawString(MARGIN, y, f"{i+1}. {q.content}")
         y -= 0.8 * cm
 
-        # Ilustracja do pytania
+        # Obrazek główny (skalowany do szerokości arkusza minus marginesy)
         if q.image_path and os.path.exists(q.image_path):
             try:
-                c.drawImage(q.image_path, 3 * cm, y - 4.5 * cm, width=12 * cm, height=4.5 * cm, preserveAspectRatio=True, anchor='sw')
+                c.drawImage(q.image_path, MARGIN + 1*cm, y - 4.5 * cm, width=WIDTH - 2*MARGIN - 2*cm, height=4.5 * cm, preserveAspectRatio=True, anchor='sw')
                 y -= 5 * cm
             except:
-                c.drawString(3 * cm, y, "[Błąd wczytywania grafiki pytania]")
-                y -= 0.8 * cm
+                y -= 0.5 * cm
 
-        # Odpowiedzi
+        # Odpowiedzi A, B, C
         c.setFont(font_name, 10)
         labels = [("A", q.ans_a, q.image_a), ("B", q.ans_b, q.image_b), ("C", q.ans_c, q.image_c)]
         
         for label, text, img_path in labels:
-            # Tekst odpowiedzi
-            c.drawString(2.5 * cm, y, f"{label}) {text if text else ''}")
+            c.drawString(MARGIN + 0.5 * cm, y, f"{label}) {text if text else ''}")
             
-            # Obrazek do odpowiedzi (jeśli istnieje)
             if img_path and os.path.exists(img_path):
                 try:
                     y -= 3.2 * cm
-                    c.drawImage(img_path, 3 * cm, y, width=4 * cm, height=3 * cm, preserveAspectRatio=True, anchor='sw')
+                    c.drawImage(img_path, MARGIN + 1 * cm, y, width=4 * cm, height=3 * cm, preserveAspectRatio=True, anchor='sw')
                 except:
                     y -= 0.5 * cm
-                    c.drawString(3.5 * cm, y, "[Błąd grafiki]")
-            
             y -= 0.7 * cm
         
         y -= 0.5 * cm # Odstęp między pytaniami
@@ -110,36 +126,34 @@ def create_test_paper_pdf(questions, profession_name, logo_file=None):
     return buffer
 
 def create_answer_key_pdf(questions, profession_name):
-    """Generuje osobny PDF z kluczem odpowiedzi."""
+    """Osobny arkusz z kluczem odpowiedzi."""
     buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    c = NumberedCanvas(buffer, pagesize=A4)
     font_name = get_font_name()
     
     c.setFont(font_name, 16)
-    c.drawCentredString(width / 2, height - 2 * cm, f"KLUCZ ODPOWIEDZI")
-    c.setFont(font_name, 12)
-    c.drawCentredString(width / 2, height - 2.7 * cm, f"Dla arkusza: {profession_name}")
-    c.line(2 * cm, height - 3.2 * cm, width - 2 * cm, height - 3.2 * cm)
+    c.drawCentredString(WIDTH / 2, HEIGHT - MARGIN - 1 * cm, f"KLUCZ ODPOWIEDZI")
+    c.setFont(font_name, 10)
+    c.drawCentredString(WIDTH / 2, HEIGHT - MARGIN - 1.7 * cm, f"Arkusz: {profession_name}")
+    c.line(MARGIN, HEIGHT - MARGIN - 2.2 * cm, WIDTH - MARGIN, HEIGHT - MARGIN - 2.2 * cm)
 
-    y = height - 4.5 * cm
+    y = HEIGHT - MARGIN - 3 * cm
     col = 0
     
     for i, q in enumerate(questions):
         c.setFont(font_name, 11)
-        # Rozmieszczenie w 3 kolumnach dla oszczędności miejsca
-        x_pos = 2 * cm + (col * 5 * cm)
-        c.drawString(x_pos, y, f"Pytanie {i+1}:   [ {q.correct_ans} ]")
+        x_pos = MARGIN + (col * 6 * cm)
+        c.drawString(x_pos, y, f"{i+1}: [ {q.correct_ans} ]")
         
         y -= 0.8 * cm
-        if y < 2 * cm:
+        if y < MARGIN + 1 * cm:
             if col < 2:
                 col += 1
-                y = height - 4.5 * cm
+                y = HEIGHT - MARGIN - 3 * cm
             else:
                 c.showPage()
                 col = 0
-                y = height - 4.5 * cm
+                y = HEIGHT - MARGIN - 3 * cm
 
     c.save()
     buffer.seek(0)
