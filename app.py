@@ -5,6 +5,7 @@ import db
 import manager
 import edytor
 import test
+import pdf_service
 
 # 1. Inicjalizacja bazy danych i danych startowych (Admin, Grupy)
 db.init_db()
@@ -209,6 +210,47 @@ def admin_profession_management():
 
     session.close()
 
+def show_pdf_generator():
+    st.header("🖨️ Generator Arkuszy Testowych PDF")
+    st.write("Skonfiguruj parametry arkusza egzaminacyjnego do druku.")
+    
+    # 1. Wybór parametrów
+    profs = manager.get_all_professions()
+    session = db.get_session()
+    topics = session.query(db.TestType).all()
+    session.close()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_prof = st.selectbox("Grupa zawodowa", profs, format_func=lambda x: x.name)
+        count = st.number_input("Całkowita liczba pytań", min_value=1, max_value=100, value=30)
+    
+    with col2:
+        selected_topics = st.multiselect("Kategorie tematyczne (losowanie równomierne)", topics, format_func=lambda x: x.name)
+        logo_file = st.file_uploader("Wgraj logotyp (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
+
+    # 2. Generowanie
+    if st.button("Przygotuj arkusz PDF"):
+        if not selected_topics:
+            st.error("Proszę wybrać przynajmniej jedną kategorię tematyczną.")
+        else:
+            topic_ids = [t.id for t in selected_topics]
+            # Pobranie zbalansowanych pytań (funkcja dodana wcześniej do manager.py)
+            questions = manager.get_balanced_questions(selected_prof.id, topic_ids, count)
+            
+            if questions:
+                pdf_output = pdf_service.create_test_pdf(questions, selected_prof.name, logo_file)
+                st.success(f"Pomyślnie wygenerowano arkusz z {len(questions)} pytaniami.")
+                
+                st.download_button(
+                    label="📥 Pobierz gotowy PDF",
+                    data=pdf_output,
+                    file_name=f"Egzamin_{selected_prof.name}_{count}pytan.pdf",
+                    mime="application/pdf"
+                )
+            else:
+                st.error("Brak pytań spełniających wybrane kryteria w bazie.")
+
 def main():
     if not st.session_state.logged_in:
         login_screen()
@@ -223,9 +265,9 @@ def main():
     
     # Definicja menu na podstawie ról
     if user.role == config.ROLE_ADMIN:
-        menu_options = ["🏠 Start", "📝 Rozwiąż Test", "🛠️ Edytor Pytań", "👥 Użytkownicy", "🏗️ Grupy i Kategorie", "👤 Profil"]
+        menu_options = ["🏠 Start", "📝 Rozwiąż Test", "🛠️ Edytor Pytań", "🖨️ Generator PDF", "👥 Użytkownicy", "🏗️ Grupy i Kategorie", "👤 Profil"]
     elif user.role == config.ROLE_EDITOR:
-        menu_options = ["🏠 Start", "📝 Rozwiąż Test", "🛠️ Edytor Pytań", "👤 Profil"]
+        menu_options = ["🏠 Start", "📝 Rozwiąż Test", "🛠️ Edytor Pytań", "🖨️ Generator PDF", "👤 Profil"]
     else:
         menu_options = ["🏠 Start", "📝 Rozwiąż Test", "👤 Profil"]
 
@@ -251,7 +293,10 @@ def main():
 
     elif choice == "🛠️ Edytor Pytań":
         edytor.show_editor_ui()
-
+    
+    elif choice == "🖨️ Generator PDF" and user.role in [config.ROLE_ADMIN, config.ROLE_EDITOR]:
+        show_pdf_generator()
+    
     elif choice == "👥 Użytkownicy" and user.role == config.ROLE_ADMIN:
         admin_user_management()
 

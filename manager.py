@@ -1,4 +1,6 @@
 import bcrypt
+import random
+from sqlalchemy.sql import func
 from sqlalchemy.orm import Session, joinedload
 from db import get_session, User, ProfessionGroup, TestType
 import config
@@ -114,3 +116,27 @@ def get_all_professions():
     profs = session.query(ProfessionGroup).all()
     session.close()
     return profs
+
+def get_balanced_questions(profession_id, topic_ids, total_count):
+    """Pobiera zbalansowaną liczbę pytań z wybranych kategorii."""
+    session = get_session()
+    questions_per_topic = total_count // len(topic_ids)
+    remainder = total_count % len(topic_ids)
+    
+    final_questions = []
+    
+    for i, t_id in enumerate(topic_ids):
+        # Określamy ile pytań wziąć z tej kategorii
+        count_to_take = questions_per_topic + (1 if i < remainder else 0)
+        
+        query = session.query(UserQuestion).join(UserQuestion.professions).join(UserQuestion.test_types)
+        query = query.filter(ProfessionGroup.id == profession_id)
+        query = query.filter(TestType.id == t_id)
+        
+        # Losowanie po stronie bazy danych dla wydajności
+        topic_pool = query.order_by(func.rand()).limit(count_to_take).all()
+        final_questions.extend(topic_pool)
+        
+    session.close()
+    random.shuffle(final_questions) # Mieszamy, żeby nie były pogrupowane kategoriami
+    return final_questions
