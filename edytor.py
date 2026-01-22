@@ -108,7 +108,7 @@ def show_editor_ui():
                 with e_q_col1:
                     new_content = st.text_area("Treść", value=q.content)
                 with e_q_col2:
-                    if q.image_q: st.image(q.image_q, width=100)
+                    if q.image_path: st.image(q.image_path, width=100)
                     new_img_q = st.file_uploader("Zmień obraz pytania", type=config.ALLOWED_EXTENSIONS)
 
                 st.divider()
@@ -138,7 +138,7 @@ def show_editor_ui():
                     q.correct_ans = new_correct
                     q.comment = new_comment
                     
-                    if new_img_q: q.image_q = save_uploaded_file(new_img_q)
+                    if new_img_q: q.image_path = save_uploaded_file(new_img_q)
                     if new_ans['img_A']: q.image_a = save_uploaded_file(new_ans['img_A'])
                     if new_ans['img_B']: q.image_b = save_uploaded_file(new_ans['img_B'])
                     if new_ans['img_C']: q.image_c = save_uploaded_file(new_ans['img_C'])
