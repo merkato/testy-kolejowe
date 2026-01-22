@@ -50,7 +50,7 @@ def create_test_paper_pdf(questions, profession_name, logo_file=None):
     for i, q in enumerate(questions):
         # Sprawdzenie miejsca na stronie (bezpieczny margines dla pytania z obrazkiem)
         needed_space = 2 * cm
-        if q.image_q: needed_space += 5 * cm
+        if q.image_path: needed_space += 5 * cm
         if q.image_a or q.image_b or q.image_c: needed_space += 4 * cm
         
         if y < needed_space:
@@ -64,9 +64,9 @@ def create_test_paper_pdf(questions, profession_name, logo_file=None):
         y -= 0.8 * cm
 
         # Ilustracja do pytania
-        if q.image_q and os.path.exists(q.image_q):
+        if q.image_path and os.path.exists(q.image_path):
             try:
-                c.drawImage(q.image_q, 3 * cm, y - 4.5 * cm, width=12 * cm, height=4.5 * cm, preserveAspectRatio=True, anchor='sw')
+                c.drawImage(q.image_path, 3 * cm, y - 4.5 * cm, width=12 * cm, height=4.5 * cm, preserveAspectRatio=True, anchor='sw')
                 y -= 5 * cm
             except:
                 c.drawString(3 * cm, y, "[Błąd wczytywania grafiki pytania]")
