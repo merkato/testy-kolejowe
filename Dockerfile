@@ -9,11 +9,12 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Instalacja zależności systemowych
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libmariadb-dev \
+RUN pt-get update && apt-get install -y \
+    fonts-freefont-ttf \
+    libfreetype6-dev \
+    libjpeg-dev \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
-
 # Kopiowanie i instalacja zależności Pythona
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
