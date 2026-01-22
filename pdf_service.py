@@ -39,10 +39,10 @@ def draw_header(c, title, logo_file):
                         width=display_w, height=display_h, mask='auto')
         except: pass
 
-    c.setFont(FONT_NAME, 16)
+    c.setFont(FONT_NAME, 14)
     c.drawCentredString(WIDTH / 2, HEIGHT - MARGIN - 1 * cm, title)
     c.setFont(FONT_NAME, 10)
-    c.drawString(MARGIN, HEIGHT - MARGIN - 2.5 * cm, "Imię i nazwisko: ............................................................ Data: ....................")
+    c.drawString(MARGIN, HEIGHT - MARGIN - 2.5 * cm, "Imię i nazwisko: ........................................................ Data: ....................")
     c.line(MARGIN, HEIGHT - MARGIN - 2.7 * cm, WIDTH - MARGIN, HEIGHT - MARGIN - 2.7 * cm)
 
 def draw_footer(c, page_num, total_pages):
