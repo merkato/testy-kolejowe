@@ -1,9 +1,9 @@
 import streamlit as st
 import random
-import os  # Dodany brakujący import
-from PIL import Image
+import os
 from db import get_session, Question, ProfessionGroup, TestType, update_question_stats
 import config
+import style  # <--- NASZ NOWY MODUŁ STYLÓW
 
 def init_test_state():
     """Inicjalizacja zmiennych sesyjnych dla testu."""
@@ -14,16 +14,8 @@ def init_test_state():
         st.session_state.test_phase = 'setup'
         st.session_state.results_calculated = False
 
-def st_responsive_image(path, caption=None):
-    """Wyświetla obraz: 60% na komputerze, 100% na telefonie."""
-    # Proporcje [lewo, środek, prawo]
-    # Na telefonie Streamlit zmieni to w 100% szerokości dla każdej kolumny
-    col1, col2, col3 = st.columns([0.2, 0.6, 0.2])
-    with col2:
-        st.image(path, caption=caption, use_container_width=True)
-
 def draw_questions(profession_id, test_type_id):
-    """Logika losowania 30 pytań zgodnie z wymaganiami."""
+    """Logika losowania 30 pytań."""
     session = get_session()
     query = session.query(Question).join(Question.professions).join(Question.test_types)
     query = query.filter(ProfessionGroup.id == profession_id)
@@ -53,12 +45,13 @@ def finish_test():
     st.session_state.test_phase = 'finished'
 
 def show_test_ui():
-    st.markdown(config.CUSTOM_CSS, unsafe_allow_html=True)
+    # 1. Aplikujemy pastelowe style na starcie
+    style.apply_custom_css()
     init_test_state()
 
     # --- FAZA 1: SETUP ---
     if st.session_state.test_phase == 'setup':
-        st.title("📝 Rozpocznij nowy test")
+        st.title("📝 Nowy Egzamin")
         session = get_session()
         profs = session.query(ProfessionGroup).all()
         user_profs = st.session_state.user.professions if st.session_state.user.role == config.ROLE_USER else profs
@@ -70,7 +63,7 @@ def show_test_ui():
         sel_prof = st.selectbox("Wybierz grupę zawodową", list(prof_opt.keys()))
         sel_type = st.selectbox("Wybierz rodzaj testu", list(type_opt.keys()))
 
-        if st.button("START"):
+        if st.button("ROZPOCZNIJ TEST", type="primary", use_container_width=True):
             questions = draw_questions(prof_opt[sel_prof], type_opt[sel_type])
             if questions:
                 st.session_state.test_questions = questions
@@ -86,42 +79,58 @@ def show_test_ui():
 
         st.subheader(f"Pytanie {idx + 1} z 30")
         
-        # Logika wyświetlania grafiki (poprawione wcięcia)
-        if q.image_path and os.path.exists(q.image_path):
-            img = Image.open(q.image_path)
-            img.thumbnail((config.QUESTION_IMAGE_SIZE, config.QUESTION_IMAGE_SIZE))
-            st_responsive_image(img)
-        
+        # Treść pytania
         st.write(f"### {q.content}")
+
+        # Główna grafika pytania (Responsywna 60% PC / 100% Mobile)
+        if q.image_path:
+            style.st_responsive_image(q.image_path)
         
-        options = {"A": q.ans_a, "B": q.ans_b, "C": q.ans_c}
+        st.divider()
+
+        # Układ odpowiedzi z grafikami (Tekst obok obrazka)
+        options = {
+            "A": (q.ans_a, q.image_a),
+            "B": (q.ans_b, q.image_b),
+            "C": (q.ans_c, q.image_c)
+        }
+
+        # Wyświetlamy wizualny podgląd odpowiedzi (z obrazkami)
+        for label in ["A", "B", "C"]:
+            text, img = options[label]
+            style.st_answer_layout(label, text, img)
+
+        # Wybór odpowiedzi (Radio)
         current_choice = st.session_state.user_answers.get(idx)
-        
-        choice = st.radio("Wybierz odpowiedź:", ["A", "B", "C"], 
-                          index=None if current_choice is None else ["A", "B", "C"].index(current_choice),
-                          format_func=lambda x: f"{x}: {options[x]}",
-                          key=f"q_{idx}")
+        choice = st.radio(
+            "Twoja decyzja:", 
+            ["A", "B", "C"], 
+            index=None if current_choice is None else ["A", "B", "C"].index(current_choice),
+            horizontal=True,
+            key=f"q_{idx}"
+        )
 
+        # Nawigacja
         col1, col2 = st.columns(2)
-
-        if col1.button("Zatwierdź Odpowiedź", disabled=(choice is None), use_container_width=True):
+        if col1.button("Zatwierdź i dalej", disabled=(choice is None), type="primary", use_container_width=True):
             st.session_state.user_answers[idx] = choice
             next_idx = next((i for i in range(30) if i not in st.session_state.user_answers), None)
             if next_idx is not None:
                 st.session_state.current_idx = next_idx
             st.rerun()
 
-        if col2.button("Pomiń", use_container_width=True):
+        if col2.button("Pomiń / Poprzednie", use_container_width=True):
             st.session_state.current_idx = (idx + 1) % 30
             st.rerun()
 
+        # Stopka testu
         if len(st.session_state.user_answers) == 30:
-            st.divider()
+            st.success("Wszystkie odpowiedzi udzielone!")
             c1, c2 = st.columns(2)
-            if c1.button("ZAKOŃCZ TEST", type="primary", use_container_width=True):
+            if c1.button("ZAKOŃCZ I OCEŃ", type="primary", use_container_width=True):
                 finish_test()
                 st.rerun()
-            if c2.button("Przejrzyj odpowiedzi", use_container_width=True):
+            if c2.button("Przejrzyj wszystko", use_container_width=True):
                 st.session_state.test_phase = 'review'
                 st.session_state.current_idx = 0
                 st.rerun()
@@ -130,60 +139,63 @@ def show_test_ui():
     elif st.session_state.test_phase == 'review':
         idx = st.session_state.current_idx
         q = st.session_state.test_questions[idx]
-        st.subheader(f"Przegląd - Pytanie {idx + 1}")
+        st.subheader(f"Przegląd pytań - {idx + 1}/30")
         
-        # Podgląd grafiki również w trybie przeglądu
-        if q.image_path and os.path.exists(q.image_path):
-            img = Image.open(q.image_path)
-            img.thumbnail((config.QUESTION_IMAGE_SIZE, config.QUESTION_IMAGE_SIZE))
-            st_responsive_image(img)
+        # Powtarzamy układ responsywny
+        st.write(f"**{q.content}**")
+        if q.image_path:
+            style.st_responsive_image(q.image_path)
 
-        options = {"A": q.ans_a, "B": q.ans_b, "C": q.ans_c}
         current_val = st.session_state.user_answers.get(idx)
-        
         new_choice = st.radio("Zmień odpowiedź:", ["A", "B", "C"], 
                               index=["A", "B", "C"].index(current_val) if current_val else None,
-                              format_func=lambda x: f"{x}: {options[x]}", key=f"rev_{idx}")
+                              key=f"rev_{idx}")
         
-        if st.button("Zapisz zmianę"):
+        if st.button("Zapisz korektę", use_container_width=True):
             st.session_state.user_answers[idx] = new_choice
-            st.success("Zmieniono.")
+            st.toast("Zmiana zapisana!")
 
         c1, c2, c3 = st.columns(3)
-        if c1.button("Poprzednie") and idx > 0:
+        if c1.button("Wstecz", use_container_width=True) and idx > 0:
             st.session_state.current_idx -= 1
             st.rerun()
-        if c2.button("Następne") and idx < 29:
+        if c2.button("Dalej", use_container_width=True) and idx < 29:
             st.session_state.current_idx += 1
             st.rerun()
-        if c3.button("ZAKOŃCZ TEST", type="primary"):
+        if c3.button("ZAKOŃCZ", type="primary", use_container_width=True):
             finish_test()
             st.rerun()
 
     # --- FAZA 4: WYNIKI ---
     elif st.session_state.test_phase == 'finished':
-        st.title("📊 Wynik Testu")
+        st.title("📊 Wynik Twojego Egzaminu")
         score = st.session_state.score
-        percent = round((score / 30) * 100, 1)
-        st.metric("Poprawne odpowiedzi", f"{score} / 30", f"{percent}%")
+        percent = round((score / 30) * 100, 2)
         
-        st.subheader("Błędne odpowiedzi i komentarze:")
+        # Metric w pastelowym stylu
+        st.metric("Skuteczność", f"{percent}%", f"{score} / 30")
+        
+        if percent >= 90:
+            st.balloons()
+            st.success("Gratulacje! Egzamin zaliczony.")
+        else:
+            st.error("Niestety, wynik poniżej progu zaliczeniowego (90%).")
+
+        st.subheader("Analiza błędów:")
         for i, q in enumerate(st.session_state.test_questions):
             user_ans = st.session_state.user_answers.get(i)
             if user_ans != q.correct_ans:
-                with st.container(border=True):
-                    st.write(f"**Pytanie:** {q.content}")
-                    # Podgląd grafiki w wynikach (opcjonalnie mniejszy)
-                    if q.image_path and os.path.exists(q.image_path):
-                        img = Image.open(q.image_path)
-                        img.thumbnail((100, 100))
-                        st_responsive_image(img)
-                    st.markdown(f"Twoja odpowiedź: <span class='wrong-ans'>{user_ans}</span>", unsafe_allow_html=True)
-                    st.markdown(f"Poprawna odpowiedź: <span class='correct-ans'>{q.correct_ans}</span>", unsafe_allow_html=True)
+                with st.expander(f"❌ Pytanie nr {i+1}: {q.content[:50]}..."):
+                    st.write(f"**Pełna treść:** {q.content}")
+                    if q.image_path:
+                        style.st_responsive_image(q.image_path, width_percent=0.4)
+                    
+                    st.error(f"Twoja odpowiedź: {user_ans}")
+                    st.success(f"Poprawna odpowiedź: {q.correct_ans}")
                     if q.comment:
-                        st.info(f"💡 **Komentarz:** {q.comment}")
+                        st.info(f"💡 **Wyjaśnienie:** {q.comment}")
 
-        if st.button("Wyjdź do menu głównego"):
+        if st.button("Powrót do strony głównej", use_container_width=True):
             for key in list(st.session_state.keys()):
                 if key not in ['user', 'logged_in']:
                     del st.session_state[key]
