@@ -27,10 +27,6 @@ if 'logged_in' not in st.session_state:
 if 'user' not in st.session_state:
     st.session_state.user = None
 
-def render_footer():
-    """Renderuje stopkę na dole strony."""
-    st.markdown(f'<div class="footer">{config.FOOTER_TEXT}</div>', unsafe_allow_html=True)
-
 def login_screen():
     """Ekran logowania."""
     st.title("🚉 Testy Kolejowe")
@@ -50,8 +46,6 @@ def login_screen():
             else:
                 st.error("Nieprawidłowy login lub hasło.")
     
-    render_footer()  # Wywołanie stopki na ekranie logowania
-
 def user_profile_page():
     st.header("👤 Ustawienia konta")
     user = st.session_state.user
