@@ -6,6 +6,7 @@ import manager
 import edytor
 import test
 import pdf_service
+import style
 
 # 1. Inicjalizacja bazy danych i danych startowych (Admin, Grupy)
 db.init_db()
@@ -18,9 +19,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# Wstrzyknięcie stylów CSS z config.py
-st.markdown(config.CUSTOM_CSS, unsafe_allow_html=True)
+style.apply_custom_css()
 
 # 3. Zarządzanie stanem sesji logowania
 if 'logged_in' not in st.session_state:
