@@ -4,6 +4,7 @@ import os
 import uuid
 import config
 from db import get_session, Question, ProfessionGroup, TestType
+from importer import run_mass_import
 
 def save_uploaded_file(uploaded_file):
     """Pomocnicza funkcja do zapisu plików graficznych."""
@@ -30,7 +31,7 @@ def show_editor_ui():
     prof_options = {p.name: p for p in all_professions}
     type_options = {t.name: t for t in all_test_types}
 
-    menu = ["Dodaj nowe pytanie", "Edytuj / Usuń istniejące"]
+    menu = ["Dodaj nowe pytanie", "Edytuj / Usuń istniejące" , "Tabela pytań", "🚀 Masowy Import"]
     choice = st.sidebar.selectbox("Menu Edytora", menu)
 
     # --- LOGIKA: DODAWANIE NOWEGO PYTANIA ---
@@ -94,7 +95,7 @@ def show_editor_ui():
                     st.rerun()
 
     # --- LOGIKA: EDYCJA / USUWANIE ---
-    else:
+    elif choice == "Edytuj / Usuń istniejące":
         st.subheader("Zarządzaj pytaniami")
         q_list = {f"ID {q.id}: {q.content[:50]}...": q for q in all_questions}
         selected_q_label = st.selectbox("Wybierz do edycji", [""] + list(q_list.keys()))
@@ -153,5 +154,100 @@ def show_editor_ui():
                     session.delete(q)
                     session.commit()
                     st.rerun()
+    # --- LOGIKA: TABELA PYTAŃ (NASZ NOWY KROK) ---
+    elif choice == "Tabela pytań":
+        st.subheader("📊 Tabela statystyk i zdawalności")
+        # 1. FILTRACJA: Rodzaj testu
+        type_names = ["Wszystkie"] + [t.name for t in all_test_types]
+        selected_type_name = st.selectbox("Filtruj według rodzaju testu:", type_names)
+
+        # 2. LOGIKA FILTROWANIA ZAPYTANIA
+        query = session.query(Question)
+        if selected_type_name != "Wszystkie":
+            selected_type_obj = type_options[selected_type_name]
+            query = query.filter(Question.test_types.any(id=selected_type_obj.id))
+        
+        filtered_questions = query.all()
+
+        # 3. WYŚWIETLANIE TABELI
+        if filtered_questions:
+            data = []
+            for q in filtered_questions:
+                data.append({
+                    "ID": q.id,
+                    "Pytanie": q.content,
+                    "Użyć": q.total_attempts,
+                    "Zdawalność": f"{q.pass_rate}%"
+                })
+            
+            df = pd.DataFrame(data)
+            st.dataframe(
+                df,
+                column_config={
+                    "Pytanie": st.column_config.TextColumn("Treść pytania", width="large"),
+                    "Zdawalność": st.column_config.ProgressColumn(
+                        "Zdawalność",
+                        help="Procent poprawnych odpowiedzi",
+                        format="%s",
+                        min_value=0,
+                        max_value=100
+                    ),
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.divider()
+
+            # 4. RESETOWANIE STATYSTYK
+            st.write("### ⚠️ Zarządzanie danymi")
+            num_q = len(filtered_questions)
+            
+            # Przycisk inicjujący reset
+            if st.button(f"Zresetuj statystyki dla tych {num_q} pytań", type="secondary"):
+                st.session_state.confirm_reset = True
+
+            # Mechanizm potwierdzenia
+            if st.session_state.get("confirm_reset", False):
+                st.warning(f"Czy na pewno chcesz wyzerować statystyki dla {num_q} pytań w kategorii '{selected_type_name}'? Te dane zostaną bezpowrotnie usunięte.")
+                
+                col_c1, col_c2 = st.columns(2)
+                if col_c1.button("✅ TAK, POTWIERDZAM RESET", type="primary"):
+                    try:
+                        for q in filtered_questions:
+                            q.total_attempts = 0
+                            q.correct_attempts = 0
+                            q.pass_rate = 0.0
+                        session.commit()
+                        st.session_state.confirm_reset = False
+                        st.success("Statystyki zostały zresetowane!")
+                        st.rerun()
+                    except Exception as e:
+                        session.rollback()
+                        st.error(f"Błąd podczas resetowania: {e}")
+                
+                if col_c2.button("❌ ANULUJ"):
+                    st.session_state.confirm_reset = False
+                    st.rerun()
+        else:
+            st.info("Brak pytań w wybranej kategorii.")
+    elif choice == "🚀 Masowy Import":
+        st.subheader("🚀 Masowy Import (XLSX + ZIP)")
+        st.write("Wgraj plik Excel z pytaniami oraz paczkę ZIP ze zdjęciami.")
+    
+        col1, col2 = st.columns(2)
+        with col1:
+            excel_file = st.file_uploader("Wybierz plik Excel (.xlsx)", type=["xlsx"])
+        with col2:
+            zip_file = st.file_uploader("Wybierz paczkę zdjęć (.zip)", type=["zip"])
+        
+        if st.button("Uruchom import danych", type="primary"):
+            if excel_file and zip_file:
+                with st.spinner("Trwa importowanie..."):
+                    summary = run_mass_import(excel_file, zip_file, session)
+                    st.success(f"Import zakończony! Sukcesy: {summary['success']}, Błędy: {summary['errors']}")
+                    st.rerun()
+            else:
+                st.error("Musisz wgrać oba pliki!")
 
     session.close()
