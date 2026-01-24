@@ -25,8 +25,6 @@ ROLE_ADMIN = "Administrator"
 ROLE_EDITOR = "Edytor"
 ROLE_USER = "Użytkownik"
 
-FOOTER_TEXT = "By SQ9NIT and AJ, 2026. Stworzone z dużą ilością kawy"
-
 # --- WARSTWA WIZUALNA (CSS) ---
 # Optymalizacja pod urządzenia mobilne, jasne tło, pastelowe przyciski
 QUESTION_IMAGE_SIZE = 200

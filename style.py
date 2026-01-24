@@ -1,4 +1,5 @@
 import streamlit as st
+FOOTER_TEXT = "By SQ9NIT and AJ, 2026. Stworzone z dużą ilością kawy"
 
 def apply_custom_css():
     """Wstrzykuje pastelowe style CSS do aplikacji."""
@@ -42,6 +43,25 @@ def apply_custom_css():
             border-radius: 8px !important;
             overflow: hidden;
         }
+        /* --- STYLIZACJA STOPKI (FOOTER) --- */
+        .custom-footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            background-color: #F8F9FA; /* Bardzo jasny pastelowy szary */
+            color: #6c757d; /* Stonowany tekst */
+            text-align: center;
+            padding: 10px 0;
+            font-size: 0.8rem;
+            border-top: 1px solid #E9ECEF;
+            z-index: 999;
+        }
+
+        /* Margines dla głównej zawartości, żeby stopka nie zasłaniała treści */
+        .main .block-container {
+            padding-bottom: 60px;
+        }
     </style>
     """
     st.markdown(pastel_css, unsafe_allow_html=True)
@@ -67,3 +87,12 @@ def st_answer_layout(label, text, img_path=None):
         if img_path:
             st.image(img_path, use_container_width=True)
     st.divider()
+
+def draw_footer():
+    """Rysuje czystą, statyczną stopkę na dole ekranu."""
+    footer_html = f"""
+    <div class="custom-footer">
+        {FOOTER_TEXT}
+    </div>
+    """
+    st.markdown(footer_html, unsafe_allow_html=True)

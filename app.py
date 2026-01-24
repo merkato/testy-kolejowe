@@ -329,7 +329,7 @@ def main():
         user_profile_page()
     st.markdown('</div>', unsafe_allow_html=True) # Zamknięcie kontenera treści
     
-    render_footer()
+    style.draw_footer()
 
 if __name__ == "__main__":
     main()
