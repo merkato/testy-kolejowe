@@ -4,11 +4,12 @@ from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.utils import ImageReader
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import Paragraph
 import io
 import os
 import html
+import zipfile
 
 # --- KONFIGURACJA ---
 MARGIN = 1 * cm
@@ -37,7 +38,8 @@ def draw_header(c, title, logo_file):
             display_h = display_w * aspect
             c.drawImage(logo_img, WIDTH - MARGIN - display_w, HEIGHT - MARGIN - display_h + 0.5*cm, 
                         width=display_w, height=display_h, mask='auto')
-        except: pass
+        except Exception: 
+            pass
 
     c.setFont(FONT_NAME, 14)
     c.drawCentredString(WIDTH / 2, HEIGHT - MARGIN - 1 * cm, title)
@@ -53,7 +55,6 @@ def draw_footer(c, page_num, total_pages):
 
 def generate_exam_content(c, questions, profession_name, logo_file, total_pages=None):
     """Główna logika z zawijaniem tekstu Paragraph."""
-    styles = getSampleStyleSheet()
     q_style = ParagraphStyle('Quest', fontName=FONT_NAME, fontSize=11, leading=13, spaceAfter=4)
     a_style = ParagraphStyle('Ans', fontName=FONT_NAME, fontSize=10, leading=12, leftIndent=0.5*cm)
     
@@ -77,14 +78,17 @@ def generate_exam_content(c, questions, profession_name, logo_file, total_pages=
         h_ans = sum([p.wrap(available_width, HEIGHT)[1] for p in ans_p])
         
         needed = h_q + h_ans + 1.5 * cm
-        if q.image_path: needed += 5 * cm
+        if q.image_path:
+            needed += 5 * cm
         # Dodajemy miejsce na grafiki w odpowiedziach
         for img in [q.image_a, q.image_b, q.image_c]:
-            if img: needed += 3.5 * cm
+            if img:
+                needed += 3.5 * cm
 
         # Nowa strona jeśli brak miejsca
         if y < needed:
-            if total_pages: draw_footer(c, c.getPageNumber(), total_pages)
+            if total_pages:
+                draw_footer(c, c.getPageNumber(), total_pages)
             c.showPage()
             y = HEIGHT - MARGIN - 1 * cm
 
@@ -97,7 +101,8 @@ def generate_exam_content(c, questions, profession_name, logo_file, total_pages=
             try:
                 c.drawImage(q.image_path, MARGIN + 1*cm, y - 4.5*cm, width=available_width-2*cm, height=4.5*cm, preserveAspectRatio=True, anchor='sw')
                 y -= 5 * cm
-            except: y -= 0.5 * cm
+            except Exception:
+                y -= 0.5 * cm
 
         # Rysowanie odpowiedzi
         img_fields = [q.image_a, q.image_b, q.image_c]
@@ -113,12 +118,14 @@ def generate_exam_content(c, questions, profession_name, logo_file, total_pages=
                     y -= 3.2 * cm
                     c.drawImage(img_path, MARGIN + 1*cm, y, width=4*cm, height=3*cm, preserveAspectRatio=True, anchor='sw')
                     y -= 0.2 * cm
-                except: y -= 0.5 * cm
+                except Exception:
+                    y -= 0.5 * cm
             y -= 0.2 * cm
         
         y -= 0.6 * cm # Odstęp między pytaniami
 
-    if total_pages: draw_footer(c, c.getPageNumber(), total_pages)
+    if total_pages:
+        draw_footer(c, c.getPageNumber(), total_pages)
 
 def create_test_paper_pdf(questions, profession_name, logo_file=None):
     setup_fonts()
@@ -141,16 +148,41 @@ def create_answer_key_pdf(questions, profession_name):
     setup_fonts()
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
-    c.setFont(FONT_NAME, 16); c.drawCentredString(WIDTH/2, HEIGHT-MARGIN-1*cm, "KLUCZ ODPOWIEDZI")
-    c.setFont(FONT_NAME, 10); c.drawCentredString(WIDTH/2, HEIGHT-MARGIN-1.7*cm, f"Arkusz: {profession_name}")
+    c.setFont(FONT_NAME, 16)
+    c.drawCentredString(WIDTH/2, HEIGHT-MARGIN-1*cm, "KLUCZ ODPOWIEDZI")
+    c.setFont(FONT_NAME, 10)
+    c.drawCentredString(WIDTH/2, HEIGHT-MARGIN-1.7*cm, f"Arkusz: {profession_name}")
     c.line(MARGIN, HEIGHT-MARGIN-2.2*cm, WIDTH-MARGIN, HEIGHT-MARGIN-2.2*cm)
-    y = HEIGHT - MARGIN - 3*cm; col = 0
+    y = HEIGHT - MARGIN - 3*cm 
+    col = 0
     for i, q in enumerate(questions):
         x = MARGIN + (col * 6 * cm)
         c.drawString(x, y, f"{i+1}: [ {q.correct_ans} ]")
         y -= 0.8 * cm
         if y < MARGIN + 1*cm:
-            if col < 2: col += 1; y = HEIGHT - MARGIN - 3*cm
-            else: c.showPage(); col = 0; y = HEIGHT - MARGIN - 3*cm
-    c.save(); buffer.seek(0)
+            if col < 2:
+                 col += 1
+                 y = HEIGHT - MARGIN - 3*cm
+            else:
+                 c.showPage()
+                 col = 0
+                 y = HEIGHT - MARGIN - 3*cm
+    c.save()
+    buffer.seek(0)
     return buffer
+
+def create_full_export_zip(test_sets):
+    """
+    Pakuje wiele testów i kluczy do jednego archiwum ZIP.
+    test_sets: Lista słowników [{'test': buffer, 'key': buffer}, ...]
+    """
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for idx, s in enumerate(test_sets):
+            prefix = f"Zestaw_{idx+1}"
+            # getvalue() wyciąga czyste bajty z bufora BytesIO
+            zip_file.writestr(f"{prefix}_Arkusz.pdf", s['test'].getvalue())
+            zip_file.writestr(f"{prefix}_Klucz.pdf", s['key'].getvalue())
+            
+    zip_buffer.seek(0)
+    return zip_buffer

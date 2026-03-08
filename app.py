@@ -128,7 +128,7 @@ def admin_user_management():
                                         index=current_role_idx)
             if st.button("Aktualizuj rolę"):
                 manager.update_user_role(target_user.id, new_role_edit)
-                st.success(f"Rola zmieniona!")
+                st.success("Rola zmieniona!")
                 st.rerun()
                 
         with col2:
@@ -204,74 +204,90 @@ def admin_profession_management():
     session.close()
 
 def show_pdf_generator():
-    st.header("🖨️ Generator Arkuszy PDF")
-    st.write("Skonfiguruj parametry arkusza egzaminacyjnego do druku.")
+    st.title("🖨️ Generator Arkuszy PDF")
     
-    # Pobieramy dane z bazy
-    all_profs = manager.get_all_professions()
-    # Pobieramy rodzaje testów (tematy)
     session = db.get_session()
-    all_topics = session.query(db.TestType).all()
-    session.close()
-
-    # Tworzymy słowniki mapujące Nazwa -> ID, aby Streamlit operował na prostych typach
-    prof_map = {p.name: p.id for p in all_profs}
-    topic_map = {t.name: t.id for t in all_topics}
-
-    col1, col2 = st.columns(2)
+    profs = session.query(db.ProfessionGroup).all()
+    types = session.query(db.TestType).all()
     
+    if not profs or not types:
+        st.warning("Najpierw dodaj grupy zawodowe i typy testów w panelu Admina.")
+        session.close()
+        return
+    
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        selected_prof_name = st.selectbox("Grupa zawodowa", list(prof_map.keys()))
-        selected_prof_id = prof_map[selected_prof_name]
-        
-        count = st.number_input("Całkowita liczba pytań", min_value=1, max_value=200, value=30)
-    
+        sel_prof = st.selectbox("Grupa zawodowa", [p.name for p in profs])
     with col2:
-        # Używamy list nazw jako opcji - to naprawi problem z wybieraniem
-        selected_topic_names = st.multiselect(
-            "Kategorie tematyczne (rodzaje testu)", 
-            options=list(topic_map.keys()),
-            help="Wybierz jedną lub więcej kategorii. Pytania zostaną rozdzielone równomiernie."
-        )
-        logo_file = st.file_uploader("Wgraj logotyp (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
+        sel_type = st.selectbox("Rodzaj testu", [t.name for t in types])
+    with col3:
+        num_sets = st.number_input("Liczba zestawów", min_value=1, max_value=50, value=1)
 
-    st.divider()
+    logo_file = st.file_uploader("Opcjonalne logo (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
 
-    if st.button("Przygotuj arkusze"):
-        if not selected_topic_names:
-            st.error("Proszę wybrać przynajmniej jedną kategorię tematyczną (Rodzaj testu)!")
-        else:
-            # Zamieniamy wybrane nazwy na ID
-            selected_topic_ids = [topic_map[name] for name in selected_topic_names]
+    # --- LOGIKA GENEROWANIA ---
+    if st.button("🚀 GENERUJ DOKUMENTY", type="primary", use_container_width=True):
+        with st.spinner(f"Przygotowywanie {num_sets} zestawów..."):
+            all_sets = []
+            selected_prof = next(p for p in profs if p.name == sel_prof)
+            selected_type = next(t for t in types if t.name == sel_type)
             
-            with st.spinner("Losowanie pytań i generowanie plików..."):
-                # Pobranie pytań z manager.py
-                questions = manager.get_balanced_questions(selected_prof_id, selected_topic_ids, count)
-                
+            for i in range(num_sets):
+                # Wywołanie losowania bezpośrednio z test.py
+                questions = test.draw_questions(selected_prof.id, selected_type.id)
                 if questions:
-                    # Generowanie dwóch osobnych plików PDF
-                    paper_pdf = pdf_service.create_test_paper_pdf(questions, selected_prof_name, logo_file)
-                    key_pdf = pdf_service.create_answer_key_pdf(questions, selected_prof_name)
-                    
-                    st.success(f"Pomyślnie wygenerowano arkusz z {len(questions)} pytaniami.")
-                    
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.download_button(
-                            label="📥 Pobierz ARKUSZ PYTAŃ",
-                            data=paper_pdf,
-                            file_name=f"Egzamin_{selected_prof_name.replace(' ', '_')}.pdf",
-                            mime="application/pdf"
-                        )
-                    with c2:
-                        st.download_button(
-                            label="🔑 Pobierz KLUCZ ODPOWIEDZI",
-                            data=key_pdf,
-                            file_name=f"Klucz_{selected_prof_name.replace(' ', '_')}.pdf",
-                            mime="application/pdf"
-                        )
-                else:
-                    st.error("Nie znaleziono żadnych pytań spełniających wybrane kryteria.")
+                    pdf_test = pdf_service.create_test_paper_pdf(questions, sel_prof, logo_file)
+                    pdf_key = pdf_service.create_answer_key_pdf(questions, sel_prof)
+                    all_sets.append({'test': pdf_test, 'key': pdf_key})
+
+            # Zapisujemy wszystko do session_state, żeby nie zniknęło po kliknięciu 'Pobierz'
+            st.session_state.pdf_results = {
+                'sets': all_sets,
+                'prof_name': sel_prof,
+                'count': num_sets
+            }
+            
+            # Jeśli więcej niż 1, od razu przygotowujemy ZIP
+            if num_sets > 1:
+                st.session_state.zip_data = pdf_service.create_full_export_zip(all_sets)
+            else:
+                st.session_state.zip_data = None
+
+    # --- SEKCJA POBIERANIA (widoczna po wygenerowaniu) ---
+    if 'pdf_results' in st.session_state:
+        res = st.session_state.pdf_results
+        st.divider()
+        st.success(f"✅ Gotowe! Wygenerowano {res['count']} zestawów dla: {res['prof_name']}")
+
+        if res['count'] > 1:
+            # TRYB MASOWY: Jeden przycisk ZIP
+            st.download_button(
+                label="📥 POBIERZ PACZKĘ WSZYSTKICH TESTÓW (ZIP)",
+                data=st.session_state.zip_data,
+                file_name=f"Egzamin_{res['prof_name']}_{res['count']}_zestawow.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+        else:
+            # TRYB POJEDYNCZY: Dwa przyciski obok siebie, które nie znikają
+            s = res['sets'][0]
+            c1, c2 = st.columns(2)
+            c1.download_button(
+                "📄 Pobierz Arkusz PDF", 
+                s['test'].getvalue(), 
+                f"Test_{res['prof_name']}.pdf", 
+                "application/pdf", 
+                use_container_width=True
+            )
+            c2.download_button(
+                "🔑 Pobierz Klucz PDF", 
+                s['key'].getvalue(), 
+                f"Klucz_{res['prof_name']}.pdf", 
+                "application/pdf", 
+                use_container_width=True
+            )
+
+    session.close()
 
 def main():
     if not st.session_state.logged_in:

@@ -1,10 +1,10 @@
 import pandas as pd
 import zipfile
-import io
+#import io
 import os
 from sqlalchemy.orm import Session
 from db import Question, ProfessionGroup, TestType
-import shutil
+#import shutil
 
 UPLOAD_FOLDER = "uploads"
 

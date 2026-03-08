@@ -145,10 +145,14 @@ def show_editor_ui():
                     q.correct_ans = new_correct
                     q.comment = new_comment
                     
-                    if new_img_q: q.image_path = save_uploaded_file(new_img_q)
-                    if new_ans['img_A']: q.image_a = save_uploaded_file(new_ans['img_A'])
-                    if new_ans['img_B']: q.image_b = save_uploaded_file(new_ans['img_B'])
-                    if new_ans['img_C']: q.image_c = save_uploaded_file(new_ans['img_C'])
+                    if new_img_q:
+                        q.image_path = save_uploaded_file(new_img_q)
+                    if new_ans['img_A']:
+                        q.image_a = save_uploaded_file(new_ans['img_A'])
+                    if new_ans['img_B']: 
+                        q.image_b = save_uploaded_file(new_ans['img_B'])
+                    if new_ans['img_C']:
+                        q.image_c = save_uploaded_file(new_ans['img_C'])
                     
                     q.professions = [prof_options[name] for name in new_profs]
                     q.test_types = [type_options[name] for name in new_types]

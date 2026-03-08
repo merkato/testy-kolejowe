@@ -1,7 +1,7 @@
 import bcrypt
 import random
 from sqlalchemy.sql import func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import joinedload
 from db import get_session, User, ProfessionGroup, TestType, Question
 import config
 

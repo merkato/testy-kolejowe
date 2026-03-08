@@ -1,9 +1,8 @@
 import streamlit as st
 import random
-import os
 from db import get_session, Question, ProfessionGroup, TestType, update_question_stats
 import config
-import style  # <--- NASZ NOWY MODUŁ STYLÓW
+import style
 
 def init_test_state():
     """Inicjalizacja zmiennych sesyjnych dla testu."""
@@ -30,7 +29,7 @@ def draw_questions(profession_id, test_type_id):
         return random.sample(pool, 30)
     else:
         return random.choices(pool, k=30)
-
+    
 def finish_test():
     """Obliczanie wyników i aktualizacja bazy."""
     correct_count = 0
