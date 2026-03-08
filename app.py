@@ -203,89 +203,75 @@ def admin_profession_management():
 
     session.close()
 
+# app.py -> show_pdf_generator()
+
 def show_pdf_generator():
-    st.title("🖨️ Generator Arkuszy PDF")
-    
+    st.header("🖨️ Generator Arkuszy Egzaminacyjnych")
+
     session = db.get_session()
-    profs = session.query(db.ProfessionGroup).all()
-    types = session.query(db.TestType).all()
-    
-    if not profs or not types:
-        st.warning("Najpierw dodaj grupy zawodowe i typy testów w panelu Admina.")
-        session.close()
-        return
-    
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        sel_prof = st.selectbox("Grupa zawodowa", [p.name for p in profs])
-    with col2:
-        sel_type = st.selectbox("Rodzaj testu", [t.name for t in types])
-    with col3:
-        num_sets = st.number_input("Liczba zestawów", min_value=1, max_value=50, value=1)
+    profs = manager.get_all_professions(session)
+    t_types = manager.get_all_test_types(session)
 
-    logo_file = st.file_uploader("Opcjonalne logo (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
+    # UI: Wybór parametrów
+    sel_prof = st.selectbox("Wybierz grupę zawodową", profs, format_func=lambda x: x.name)
+    sel_types = st.multiselect(
+        "Wybierz rodzaje testów do uwzględnienia", 
+        t_types, 
+        format_func=lambda x: x.name
+    )
 
-    # --- LOGIKA GENEROWANIA ---
+    col_q, col_s = st.columns(2)
+    with col_q:
+        q_per_test = st.number_input("Ilość pytań w jednym arkuszu", min_value=1, value=40)
+    with col_s:
+        num_groups = st.number_input("Ilość osobnych zestawów (grup)", min_value=1, value=1)
+
+    logo_file = st.file_uploader("Dodaj logo (opcjonalnie)", type=['png', 'jpg', 'jpeg'])
+
     if st.button("🚀 GENERUJ DOKUMENTY", type="primary", use_container_width=True):
-        with st.spinner(f"Przygotowywanie {num_sets} zestawów..."):
-            all_sets = []
-            selected_prof = next(p for p in profs if p.name == sel_prof)
-            selected_type = next(t for t in types if t.name == sel_type)
-            
-            for i in range(num_sets):
-                # Wywołanie losowania bezpośrednio z test.py
-                questions = test.draw_questions(selected_prof.id, selected_type.id)
-                if questions:
-                    pdf_test = pdf_service.create_test_paper_pdf(questions, sel_prof, logo_file)
-                    pdf_key = pdf_service.create_answer_key_pdf(questions, sel_prof)
-                    all_sets.append({'test': pdf_test, 'key': pdf_key})
+        if not sel_types:
+            st.warning("Wybierz co najmniej jeden rodzaj testu!")
+        else:
+            with st.spinner(f"Generowanie {num_groups} zestawów..."):
+                type_ids = [t.id for t in sel_types]
+                all_sets = []
+                
+                for i in range(num_groups):
+                    # Wywołanie draw_questions z test.py
+                    group_label = chr(65 + i)
+                    questions = test.draw_questions(session, sel_prof.id, type_ids, q_per_test)
+                    
+                    if questions:
+                        pdf_test = pdf_service.create_test_paper_pdf(questions, sel_prof, logo_file, group_label=group_label)
+                        pdf_key = pdf_service.create_answer_key_pdf(questions, sel_prof, group_label=group_label)
+                        all_sets.append({'test': pdf_test, 'key': pdf_key, 'label': group_label})
 
-            # Zapisujemy wszystko do session_state, żeby nie zniknęło po kliknięciu 'Pobierz'
-            st.session_state.pdf_results = {
-                'sets': all_sets,
-                'prof_name': sel_prof,
-                'count': num_sets
-            }
-            
-            # Jeśli więcej niż 1, od razu przygotowujemy ZIP
-            if num_sets > 1:
-                st.session_state.zip_data = pdf_service.create_full_export_zip(all_sets)
-            else:
-                st.session_state.zip_data = None
+                if all_sets:
+                    st.session_state.pdf_results = {
+                        'data': all_sets,
+                        'prof_name': sel_prof.name,
+                        'is_zip': num_groups > 1
+                    }
+                    if num_groups > 1:
+                        st.session_state.zip_buffer = pdf_service.create_full_export_zip(all_sets)
 
-    # --- SEKCJA POBIERANIA (widoczna po wygenerowaniu) ---
+    # --- Sekcja pobierania (zapobiega znikaniu przycisków) ---
     if 'pdf_results' in st.session_state:
         res = st.session_state.pdf_results
         st.divider()
-        st.success(f"✅ Gotowe! Wygenerowano {res['count']} zestawów dla: {res['prof_name']}")
-
-        if res['count'] > 1:
-            # TRYB MASOWY: Jeden przycisk ZIP
+        if res['is_zip']:
             st.download_button(
-                label="📥 POBIERZ PACZKĘ WSZYSTKICH TESTÓW (ZIP)",
-                data=st.session_state.zip_data,
-                file_name=f"Egzamin_{res['prof_name']}_{res['count']}_zestawow.zip",
-                mime="application/zip",
+                "📥 POBIERZ WSZYSTKO (ZIP)", 
+                st.session_state.zip_buffer, 
+                f"Egzaminy_{res['prof_name']}.zip", 
+                "application/zip", 
                 use_container_width=True
             )
         else:
-            # TRYB POJEDYNCZY: Dwa przyciski obok siebie, które nie znikają
-            s = res['sets'][0]
+            s = res['data'][0]
             c1, c2 = st.columns(2)
-            c1.download_button(
-                "📄 Pobierz Arkusz PDF", 
-                s['test'].getvalue(), 
-                f"Test_{res['prof_name']}.pdf", 
-                "application/pdf", 
-                use_container_width=True
-            )
-            c2.download_button(
-                "🔑 Pobierz Klucz PDF", 
-                s['key'].getvalue(), 
-                f"Klucz_{res['prof_name']}.pdf", 
-                "application/pdf", 
-                use_container_width=True
-            )
+            c1.download_button("📄 Arkusz PDF", s['test'].getvalue(), "Arkusz.pdf", "application/pdf")
+            c2.download_button("🔑 Klucz PDF", s['key'].getvalue(), "Klucz.pdf", "application/pdf")
 
     session.close()
 

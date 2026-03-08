@@ -15,6 +15,7 @@ import zipfile
 MARGIN = 1 * cm
 WIDTH, HEIGHT = A4
 FONT_NAME = "Helvetica"
+FONT_BOLD = "Helvetica-Bold"
 
 def setup_fonts():
     """Konfiguruje czcionkę z obsługą polskich znaków."""
@@ -26,7 +27,7 @@ def setup_fonts():
             FONT_NAME = 'FreeSans'
             break
 
-def draw_header(c, title, logo_file):
+def draw_header(c, title, logo_file, group_label=None):
     """Nagłówek na 1. stronie (logo, tytuł, dane osobowe)."""
     if logo_file:
         try:
@@ -40,6 +41,13 @@ def draw_header(c, title, logo_file):
                         width=display_w, height=display_h, mask='auto')
         except Exception: 
             pass
+    
+    if group_label:
+        c.setFont(FONT_BOLD, 14)
+        # Ustawiamy tekst pod logo lub w prawym górnym rogu
+        text = f"Arkusz ({group_label})"
+        # WIDTH i MARGIN muszą być dostępne w zasięgu funkcji
+        c.drawRightString(WIDTH - MARGIN, HEIGHT - MARGIN - 1.2*cm, text)
 
     c.setFont(FONT_NAME, 14)
     c.drawCentredString(WIDTH / 2, HEIGHT - MARGIN - 1 * cm, title)
@@ -53,7 +61,7 @@ def draw_footer(c, page_num, total_pages):
     text = f"Strona {page_num} z {total_pages}"
     c.drawRightString(WIDTH - MARGIN, MARGIN / 2, text)
 
-def generate_exam_content(c, questions, profession_name, logo_file, total_pages=None):
+def generate_exam_content(c, questions, profession_name, logo_file, total_pages=None, group_label=None):
     """Główna logika z zawijaniem tekstu Paragraph."""
     q_style = ParagraphStyle('Quest', fontName=FONT_NAME, fontSize=11, leading=13, spaceAfter=4)
     a_style = ParagraphStyle('Ans', fontName=FONT_NAME, fontSize=10, leading=12, leftIndent=0.5*cm)
@@ -61,7 +69,7 @@ def generate_exam_content(c, questions, profession_name, logo_file, total_pages=
     available_width = WIDTH - 2 * MARGIN
     title = f"Arkusz Egzaminacyjny: {profession_name}"
     
-    draw_header(c, title, logo_file)
+    draw_header(c, title, logo_file, group_label=group_label)
     y = HEIGHT - MARGIN - 4 * cm
 
     for i, q in enumerate(questions):
@@ -127,24 +135,24 @@ def generate_exam_content(c, questions, profession_name, logo_file, total_pages=
     if total_pages:
         draw_footer(c, c.getPageNumber(), total_pages)
 
-def create_test_paper_pdf(questions, profession_name, logo_file=None):
+def create_test_paper_pdf(questions, profession_name, logo_file=None, group_label=None):
     setup_fonts()
     # Przebieg próbny do zliczenia stron
     tmp = io.BytesIO()
     c_tmp = canvas.Canvas(tmp, pagesize=A4)
-    generate_exam_content(c_tmp, questions, profession_name, logo_file, total_pages=None)
+    generate_exam_content(c_tmp, questions, profession_name, logo_file, total_pages=None, group_label=group_label)
     total_pages = c_tmp.getPageNumber()
     c_tmp.save()
 
     # Przebieg właściwy
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
-    generate_exam_content(c, questions, profession_name, logo_file, total_pages=total_pages)
+    generate_exam_content(c, questions, profession_name, logo_file, total_pages=total_pages, group_label=group_label)
     c.save()
     buffer.seek(0)
     return buffer
 
-def create_answer_key_pdf(questions, profession_name):
+def create_answer_key_pdf(questions, profession_name, group_label=None):
     setup_fonts()
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -152,6 +160,9 @@ def create_answer_key_pdf(questions, profession_name):
     c.drawCentredString(WIDTH/2, HEIGHT-MARGIN-1*cm, "KLUCZ ODPOWIEDZI")
     c.setFont(FONT_NAME, 10)
     c.drawCentredString(WIDTH/2, HEIGHT-MARGIN-1.7*cm, f"Arkusz: {profession_name}")
+    if group_label:
+        c.setFont(FONT_BOLD, 14)
+        c.drawRightString(WIDTH - MARGIN, HEIGHT - MARGIN - 1.2*cm, f"Grupa: {group_label}")
     c.line(MARGIN, HEIGHT-MARGIN-2.2*cm, WIDTH-MARGIN, HEIGHT-MARGIN-2.2*cm)
     y = HEIGHT - MARGIN - 3*cm 
     col = 0

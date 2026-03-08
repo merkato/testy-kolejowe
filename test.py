@@ -13,23 +13,44 @@ def init_test_state():
         st.session_state.test_phase = 'setup'
         st.session_state.results_calculated = False
 
-def draw_questions(profession_id, test_type_id):
-    """Logika losowania 30 pytań."""
-    session = get_session()
-    query = session.query(Question).join(Question.professions).join(Question.test_types)
-    query = query.filter(ProfessionGroup.id == profession_id)
-    query = query.filter(TestType.id == test_type_id)
-    pool = query.all()
-    session.close()
-
-    if not pool:
+def draw_questions(session, profession_id, test_type_ids, limit):
+    """
+    Losuje pytania tak, by z każdego rodzaju testu było ich mniej więcej tyle samo.
+    Zwalcza powtórki, chyba że pula jest mniejsza niż wymagany limit.
+    """
+    if not test_type_ids:
         return []
 
-    if len(pool) >= 30:
-        return random.sample(pool, 30)
-    else:
-        return random.choices(pool, k=30)
+    target_per_type = limit // len(test_type_ids)
+    remainder = limit % len(test_type_ids)
     
+    selected_questions = []
+
+    for i, t_id in enumerate(test_type_ids):
+        # Pobieramy pytania dla konkretnego rodzaju
+        pool = session.query(Question).filter(
+            Question.profession_id == profession_id,
+            Question.test_type_id == t_id
+        ).all()
+        
+        if not pool:
+            continue
+
+        # Ile pytań wyciągnąć z tego rodzaju (dodajemy 1, jeśli został nam naddatek z dzielenia)
+        count_to_draw = target_per_type + (1 if i < remainder else 0)
+        
+        # Logika zwalczania powtórek
+        if len(pool) >= count_to_draw:
+            selected_questions.extend(random.sample(pool, count_to_draw))
+        else:
+            # Jeśli pytań jest za mało, bierzemy wszystkie i dobieramy losowo powtórki
+            selected_questions.extend(pool)
+            needed = count_to_draw - len(pool)
+            selected_questions.extend(random.choices(pool, k=needed))
+
+    random.shuffle(selected_questions)
+    return selected_questions[:limit]
+
 def finish_test():
     """Obliczanie wyników i aktualizacja bazy."""
     correct_count = 0
