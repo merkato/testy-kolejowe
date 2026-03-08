@@ -203,77 +203,65 @@ def admin_profession_management():
 
     session.close()
 
-# app.py -> show_pdf_generator()
-
 def show_pdf_generator():
-    st.header("🖨️ Generator Arkuszy Egzaminacyjnych")
+    st.header("🖨️ Generator arkuszy egzaminacyjnych")
+    
+    # Manager: get_all_professions() i get_test_types() zgodnie z Twoim kodem
+    profs = manager.get_all_professions()
+    t_types = manager.get_test_types()
 
-    session = db.get_session()
-    profs = manager.get_all_professions(session)
-    t_types = manager.get_all_test_types(session)
-
-    # UI: Wybór parametrów
     sel_prof = st.selectbox("Wybierz grupę zawodową", profs, format_func=lambda x: x.name)
-    sel_types = st.multiselect(
-        "Wybierz rodzaje testów do uwzględnienia", 
-        t_types, 
-        format_func=lambda x: x.name
-    )
+    sel_types = st.multiselect("Rodzaje testów (równy podział)", t_types, format_func=lambda x: x.name)
 
     col_q, col_s = st.columns(2)
     with col_q:
-        q_per_test = st.number_input("Ilość pytań w jednym arkuszu", min_value=1, value=40)
+        q_limit = st.number_input("Pytania w arkuszu", min_value=1, value=40)
     with col_s:
-        num_groups = st.number_input("Ilość osobnych zestawów (grup)", min_value=1, value=1)
+        num_sets = st.number_input("Liczba zestawów (grup)", min_value=1, value=1)
 
-    logo_file = st.file_uploader("Dodaj logo (opcjonalnie)", type=['png', 'jpg', 'jpeg'])
+    logo_file = st.file_uploader("Dodaj logo na arkusz", type=['png', 'jpg', 'jpeg'])
 
     if st.button("🚀 GENERUJ DOKUMENTY", type="primary", use_container_width=True):
         if not sel_types:
-            st.warning("Wybierz co najmniej jeden rodzaj testu!")
+            st.warning("Musisz wybrać przynajmniej jeden rodzaj testu!")
         else:
-            with st.spinner(f"Generowanie {num_groups} zestawów..."):
+            with st.spinner("Składanie PDF..."):
                 type_ids = [t.id for t in sel_types]
                 all_sets = []
-                
-                for i in range(num_groups):
-                    # Wywołanie draw_questions z test.py
-                    group_label = chr(65 + i)
-                    questions = test.draw_questions(session, sel_prof.id, type_ids, q_per_test)
+                db_sess = db.get_session()
+                try:
+                    for i in range(num_sets):
+                        label = chr(65 + i) # A, B, C...
+                        questions = test.draw_questions(db_sess, sel_prof.id, type_ids, q_limit)
+                        
+                        if questions:
+                            # Przekazujemy label do pdf_service
+                            pdf_test = pdf_service.create_test_paper_pdf(questions, sel_prof, logo_file, group_label=label)
+                            pdf_key = pdf_service.create_answer_key_pdf(questions, sel_prof, group_label=label)
+                            all_sets.append({'test': pdf_test, 'key': pdf_key, 'label': label})
                     
-                    if questions:
-                        pdf_test = pdf_service.create_test_paper_pdf(questions, sel_prof, logo_file, group_label=group_label)
-                        pdf_key = pdf_service.create_answer_key_pdf(questions, sel_prof, group_label=group_label)
-                        all_sets.append({'test': pdf_test, 'key': pdf_key, 'label': group_label})
+                    if all_sets:
+                        st.session_state.pdf_results = {
+                            'sets': all_sets,
+                            'prof_name': sel_prof.name,
+                            'is_zip': num_sets > 1
+                        }
+                        if num_sets > 1:
+                            st.session_state.pdf_zip = pdf_service.create_full_export_zip(all_sets)
+                finally:
+                    db_sess.close()
 
-                if all_sets:
-                    st.session_state.pdf_results = {
-                        'data': all_sets,
-                        'prof_name': sel_prof.name,
-                        'is_zip': num_groups > 1
-                    }
-                    if num_groups > 1:
-                        st.session_state.zip_buffer = pdf_service.create_full_export_zip(all_sets)
-
-    # --- Sekcja pobierania (zapobiega znikaniu przycisków) ---
     if 'pdf_results' in st.session_state:
         res = st.session_state.pdf_results
         st.divider()
         if res['is_zip']:
-            st.download_button(
-                "📥 POBIERZ WSZYSTKO (ZIP)", 
-                st.session_state.zip_buffer, 
-                f"Egzaminy_{res['prof_name']}.zip", 
-                "application/zip", 
-                use_container_width=True
-            )
+            st.download_button("📥 POBIERZ PACZKĘ ZIP", st.session_state.pdf_zip, 
+                               f"Egzaminy_{res['prof_name']}.zip", "application/zip", use_container_width=True)
         else:
-            s = res['data'][0]
+            s = res['sets'][0]
             c1, c2 = st.columns(2)
-            c1.download_button("📄 Arkusz PDF", s['test'].getvalue(), "Arkusz.pdf", "application/pdf")
-            c2.download_button("🔑 Klucz PDF", s['key'].getvalue(), "Klucz.pdf", "application/pdf")
-
-    session.close()
+            c1.download_button(f"📄 Arkusz ({s['label']})", s['test'].getvalue(), f"Arkusz_{s['label']}.pdf")
+            c2.download_button(f"🔑 Klucz ({s['label']})", s['key'].getvalue(), f"Klucz_{s['label']}.pdf")
 
 def main():
     if not st.session_state.logged_in:

@@ -1,6 +1,7 @@
 import streamlit as st
 import random
-from db import get_session, Question, ProfessionGroup, TestType, update_question_stats
+import db
+from db import Question, ProfessionGroup, TestType, update_question_stats
 import config
 import style
 
@@ -15,8 +16,8 @@ def init_test_state():
 
 def draw_questions(session, profession_id, test_type_ids, limit):
     """
-    Losuje pytania tak, by z każdego rodzaju testu było ich mniej więcej tyle samo.
-    Zwalcza powtórki, chyba że pula jest mniejsza niż wymagany limit.
+    Losuje pytania dbając o równomierny rozkład między wybranymi rodzajami testów.
+    Unika powtórek, chyba że pula jest mniejsza niż wymagana liczba pytań.
     """
     if not test_type_ids:
         return []
@@ -27,7 +28,7 @@ def draw_questions(session, profession_id, test_type_ids, limit):
     selected_questions = []
 
     for i, t_id in enumerate(test_type_ids):
-        # Pobieramy pytania dla konkretnego rodzaju
+        # Używamy profession_id (zgodnie z błędem AttributeError)
         pool = session.query(Question).filter(
             Question.profession_id == profession_id,
             Question.test_type_id == t_id
@@ -36,17 +37,18 @@ def draw_questions(session, profession_id, test_type_ids, limit):
         if not pool:
             continue
 
-        # Ile pytań wyciągnąć z tego rodzaju (dodajemy 1, jeśli został nam naddatek z dzielenia)
         count_to_draw = target_per_type + (1 if i < remainder else 0)
         
-        # Logika zwalczania powtórek
+        # Próba unikalnego losowania
         if len(pool) >= count_to_draw:
             selected_questions.extend(random.sample(pool, count_to_draw))
         else:
-            # Jeśli pytań jest za mało, bierzemy wszystkie i dobieramy losowo powtórki
+            # Jeśli w bazie jest za mało pytań tego rodzaju, bierzemy wszystkie 
+            # i dobieramy resztę losowo (powtórki), aby dobić do limitu
             selected_questions.extend(pool)
             needed = count_to_draw - len(pool)
-            selected_questions.extend(random.choices(pool, k=needed))
+            if pool:
+                selected_questions.extend(random.choices(pool, k=needed))
 
     random.shuffle(selected_questions)
     return selected_questions[:limit]
@@ -65,32 +67,40 @@ def finish_test():
     st.session_state.test_phase = 'finished'
 
 def show_test_ui():
-    # 1. Aplikujemy pastelowe style na starcie
     style.apply_custom_css()
     init_test_state()
 
     # --- FAZA 1: SETUP ---
     if st.session_state.test_phase == 'setup':
         st.title("📝 Nowy Egzamin")
-        session = get_session()
-        profs = session.query(ProfessionGroup).all()
-        user_profs = st.session_state.user.professions if st.session_state.user.role == config.ROLE_USER else profs
         
-        prof_opt = {p.name: p.id for p in user_profs}
-        type_opt = {t.name: t.id for t in session.query(TestType).all()}
-        session.close()
+        # Pobieramy sesję bazy danych
+        db_sess = db.get_session()
+        try:
+            profs = db_sess.query(ProfessionGroup).all()
+            user_profs = st.session_state.user.professions if st.session_state.user.role == config.ROLE_USER else profs
+            
+            prof_opt = {p.name: p.id for p in user_profs}
+            type_opt = {t.name: t.id for t in db_sess.query(TestType).all()}
 
-        sel_prof = st.selectbox("Wybierz grupę zawodową", list(prof_opt.keys()))
-        sel_type = st.selectbox("Wybierz rodzaj testu", list(type_opt.keys()))
+            sel_prof_name = st.selectbox("Wybierz grupę zawodową", list(prof_opt.keys()))
+            sel_type_name = st.selectbox("Wybierz rodzaj testu", list(type_opt.keys()))
 
-        if st.button("ROZPOCZNIJ TEST", type="primary", use_container_width=True):
-            questions = draw_questions(prof_opt[sel_prof], type_opt[sel_type])
-            if questions:
-                st.session_state.test_questions = questions
-                st.session_state.test_phase = 'testing'
-                st.rerun()
-            else:
-                st.error("Brak pytań dla wybranej konfiguracji.")
+            if st.button("ROZPOCZNIJ TEST", type="primary", use_container_width=True):
+                # POPRAWKA: Pobieramy ID ze słowników i przekazujemy limit 30
+                p_id = prof_opt[sel_prof_name]
+                t_id = type_opt[sel_type_name]
+                
+                questions = draw_questions(db_sess, p_id, [t_id], limit=30)
+
+                if questions:
+                    st.session_state.test_questions = questions
+                    st.session_state.test_phase = 'testing'
+                    st.rerun()
+                else:
+                    st.error("Brak pytań dla wybranej konfiguracji.")
+        finally:
+            db_sess.close()
 
     # --- FAZA 2: TESTOWANIE ---
     elif st.session_state.test_phase == 'testing':
@@ -98,52 +108,37 @@ def show_test_ui():
         q = st.session_state.test_questions[idx]
 
         st.subheader(f"Pytanie {idx + 1} z 30")
-        
-        # Treść pytania
         st.write(f"### {q.content}")
 
-        # Główna grafika pytania (Responsywna 60% PC / 100% Mobile)
         if q.image_path:
             style.st_responsive_image(q.image_path)
         
         st.divider()
 
-        # Układ odpowiedzi z grafikami (Tekst obok obrazka)
-        options = {
-            "A": (q.ans_a, q.image_a),
-            "B": (q.ans_b, q.image_b),
-            "C": (q.ans_c, q.image_c)
-        }
-
-        # Wyświetlamy wizualny podgląd odpowiedzi (z obrazkami)
+        # Układ odpowiedzi
+        options = {"A": (q.ans_a, q.image_a), "B": (q.ans_b, q.image_b), "C": (q.ans_c, q.image_c)}
         for label in ["A", "B", "C"]:
             text, img = options[label]
             style.st_answer_layout(label, text, img)
 
-        # Wybór odpowiedzi (Radio)
         current_choice = st.session_state.user_answers.get(idx)
-        choice = st.radio(
-            "Twoja decyzja:", 
-            ["A", "B", "C"], 
-            index=None if current_choice is None else ["A", "B", "C"].index(current_choice),
-            horizontal=True,
-            key=f"q_{idx}"
-        )
+        choice = st.radio("Twoja decyzja:", ["A", "B", "C"], 
+                          index=None if current_choice is None else ["A", "B", "C"].index(current_choice),
+                          horizontal=True, key=f"q_{idx}")
 
-        # Nawigacja
         col1, col2 = st.columns(2)
         if col1.button("Zatwierdź i dalej", disabled=(choice is None), type="primary", use_container_width=True):
             st.session_state.user_answers[idx] = choice
+            # Szukamy następnego nieodpowiedzianego pytania
             next_idx = next((i for i in range(30) if i not in st.session_state.user_answers), None)
             if next_idx is not None:
                 st.session_state.current_idx = next_idx
             st.rerun()
 
-        if col2.button("Pomiń / Poprzednie", use_container_width=True):
+        if col2.button("Pomiń / Następne", use_container_width=True):
             st.session_state.current_idx = (idx + 1) % 30
             st.rerun()
 
-        # Stopka testu
         if len(st.session_state.user_answers) == 30:
             st.success("Wszystkie odpowiedzi udzielone!")
             c1, c2 = st.columns(2)
@@ -155,44 +150,12 @@ def show_test_ui():
                 st.session_state.current_idx = 0
                 st.rerun()
 
-    # --- FAZA 3: PRZEGLĄD ---
-    elif st.session_state.test_phase == 'review':
-        idx = st.session_state.current_idx
-        q = st.session_state.test_questions[idx]
-        st.subheader(f"Przegląd pytań - {idx + 1}/30")
-        
-        # Powtarzamy układ responsywny
-        st.write(f"**{q.content}**")
-        if q.image_path:
-            style.st_responsive_image(q.image_path)
-
-        current_val = st.session_state.user_answers.get(idx)
-        new_choice = st.radio("Zmień odpowiedź:", ["A", "B", "C"], 
-                              index=["A", "B", "C"].index(current_val) if current_val else None,
-                              key=f"rev_{idx}")
-        
-        if st.button("Zapisz korektę", use_container_width=True):
-            st.session_state.user_answers[idx] = new_choice
-            st.toast("Zmiana zapisana!")
-
-        c1, c2, c3 = st.columns(3)
-        if c1.button("Wstecz", use_container_width=True) and idx > 0:
-            st.session_state.current_idx -= 1
-            st.rerun()
-        if c2.button("Dalej", use_container_width=True) and idx < 29:
-            st.session_state.current_idx += 1
-            st.rerun()
-        if c3.button("ZAKOŃCZ", type="primary", use_container_width=True):
-            finish_test()
-            st.rerun()
-
-    # --- FAZA 4: WYNIKI ---
+    # --- FAZA 4: WYNIKI (Z TWOIMI POPRAWKAMI) ---
     elif st.session_state.test_phase == 'finished':
         st.title("📊 Wynik Twojego Egzaminu")
         score = st.session_state.score
         percent = round((score / 30) * 100, 2)
         
-        # Metric w pastelowym stylu
         st.metric("Skuteczność", f"{percent}%", f"{score} / 30")
         
         if percent >= 90:
@@ -204,17 +167,25 @@ def show_test_ui():
         st.subheader("Analiza błędów:")
         for i, q in enumerate(st.session_state.test_questions):
             user_ans = st.session_state.user_answers.get(i)
+            
+            # Mapowanie liter na pełną treść odpowiedzi
+            ans_map = {"A": q.ans_a, "B": q.ans_b, "C": q.ans_c}
+            
             if user_ans != q.correct_ans:
-                with st.expander(f"❌ Pytanie nr {i+1}: {q.content[:50]}..."):
-                    st.write(f"**Pełna treść:** {q.content}")
+                with st.expander(f"❌ Pytanie nr {i+1}: {q.content[:60]}..."):
+                    st.write(f"**Treść pytania:** {q.content}")
                     if q.image_path:
                         style.st_responsive_image(q.image_path, width_percent=0.4)
                     
-                    st.error(f"Twoja odpowiedź: {user_ans}")
-                    st.success(f"Poprawna odpowiedź: {q.correct_ans}")
+                    st.divider()
+                    # Wyświetlamy treści odpowiedzi, a nie tylko literki
+                    st.error(f"Twoja odpowiedź ({user_ans}): {ans_map.get(user_ans, 'Brak')}")
+                    st.success(f"Poprawna odpowiedź ({q.correct_ans}): {ans_map.get(q.correct_ans)}")
+                    
                     if q.comment:
                         st.info(f"💡 **Wyjaśnienie:** {q.comment}")
-
+        
+        # Przycisk powrotu czyści sesję testu
         if st.button("Powrót do strony głównej", use_container_width=True):
             for key in list(st.session_state.keys()):
                 if key not in ['user', 'logged_in']:
