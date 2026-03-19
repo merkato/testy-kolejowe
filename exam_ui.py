@@ -1,10 +1,10 @@
 import streamlit as st
-import pandas as pd
+#import pandas as pd
 import json
 import random
 from datetime import datetime, timedelta
-from sqlalchemy import func
-from db import get_session, ExamSession, Examinee, Question, SessionStatus, QuestionAttempt, TestType
+#from sqlalchemy import func
+from db import get_session, ExamSession, Examinee, Question, SessionStatus, QuestionAttempt
 import streamlit.components.v1 as components
 
 def focus_loss_tracker():
@@ -142,7 +142,7 @@ def render_exam_screen():
             saved_ans = st.session_state.answers.get(str(q_id), None)
             index = list(opts.values()).index(saved_ans) if saved_ans in opts.values() else 0
             
-            choice = st.radio(f"Wybierz odpowiedź:", opts.keys(), key=f"rad_{q_id}", index=index)
+            choice = st.radio("Wybierz odpowiedź:", opts.keys(), key=f"rad_{q_id}", index=index)
             st.session_state.answers[str(q_id)] = opts[choice]
             
             st.write("---")
@@ -222,8 +222,10 @@ def finish_exam(session, examinee, exam_session, auto=False, cheat=False):
     session.commit()
     
     st.session_state.exam_finished = True
-    if auto: st.warning("Czas upłynął! Arkusz został wysłany automatycznie.")
-    if cheat: st.error("Egzamin przerwany z powodu naruszenia zasad (Focus Loss).")
+    if auto: 
+        st.warning("Czas upłynął! Arkusz został wysłany automatycznie.")
+    if cheat: 
+        st.error("Egzamin przerwany z powodu naruszenia zasad (Focus Loss).")
 
 def render_result_page(examinee_id, session_id):
     """Wyświetla podsumowanie egzaminu w stylu 'Klasycznego Testu'."""
@@ -264,7 +266,8 @@ def render_result_page(examinee_id, session_id):
 
     if st.button("WYLOGUJ I ZAKOŃCZ", type="primary", use_container_width=True):
         for key in ["examinee_id", "session_id", "current_test", "answers", "exam_finished"]:
-            if key in st.session_state: del st.session_state[key]
+            if key in st.session_state: 
+                del st.session_state[key]
         st.rerun()
     
     session.close()
