@@ -1,6 +1,6 @@
 import bcrypt
 import random
-from sqlalchemy.sql import func
+#from sqlalchemy.sql import func
 from sqlalchemy.orm import joinedload
 from db import get_session, User, ProfessionGroup, TestType, Question
 import config
@@ -76,7 +76,7 @@ def authenticate_user(username, password):
         session.close()
 
 def update_user_password(user_id, new_password):
-    """Zmienia hasło użytkownika - poprawiona nazwa kolumny."""
+    """Zmienia hasło użytkownika"""
     session = get_session()
     try:
         user = session.query(User).filter_by(id=user_id).first()
@@ -93,6 +93,7 @@ def update_user_password(user_id, new_password):
         session.close()
 
 def update_user_role(user_id, new_role):
+    """Zmienia uprawnienia użytkownika"""
     session = get_session()
     try:
         user = session.query(User).filter_by(id=user_id).first()
@@ -119,13 +120,12 @@ def get_all_professions():
 
 def get_balanced_questions(profession_id, topic_ids, total_count):
     """Pobiera zbalansowaną liczbę pytań z wybranych kategorii."""
-    session = get_session()
+    db_session = get_session()
     final_questions = []
     
     if not topic_ids:
         return []
 
-    # Obliczamy bazową liczbę pytań na kategorię
     questions_per_topic = total_count // len(topic_ids)
     remainder = total_count % len(topic_ids)
 
@@ -133,13 +133,25 @@ def get_balanced_questions(profession_id, topic_ids, total_count):
         for i, t_id in enumerate(topic_ids):
             num_to_take = questions_per_topic + (1 if i < remainder else 0)
             
-            # Filtrowanie dla relacji Many-to-Many
-            query = session.query(Question).filter(
+            # Pobieramy pulę dostępnych pytań dla profesji i typu
+            query = db_session.query(Question).options(
+                joinedload(Question.test_types)
+            ).filter(
                 Question.professions.any(id=profession_id),
                 Question.test_types.any(id=t_id)
-            ).order_by(func.rand()).limit(num_to_take)
-            
-            final_questions.extend(query.all())
+            )
+            pool = query.all()
+
+            if not pool:
+                continue
+
+            # Logika zwalczania powtórek (unikalne losowanie vs duplikowanie przy małej bazie)
+            if len(pool) >= num_to_take:
+                final_questions.extend(random.sample(pool, num_to_take))
+            else:
+                final_questions.extend(pool)
+                needed = num_to_take - len(pool)
+                final_questions.extend(random.choices(pool, k=needed))
             
         random.shuffle(final_questions)
         return final_questions
@@ -147,4 +159,4 @@ def get_balanced_questions(profession_id, topic_ids, total_count):
         print(f"Błąd losowania: {e}")
         return []
     finally:
-        session.close()
+        db_session.close()

@@ -1,199 +1,210 @@
+import io
+import os
+import zipfile
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.utils import ImageReader
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import Paragraph
-import io
-import os
-import html
-import zipfile
+from reportlab.lib.utils import simpleSplit, ImageReader
 
-# --- KONFIGURACJA ---
-MARGIN = 1 * cm
+# --- KONFIGURACJA CZCIONEK (FreeSans z Dockera) ---
+def register_fonts():
+    font_dir = "/usr/share/fonts/truetype/freefont/"
+    reg = os.path.join(font_dir, "FreeSans.ttf")
+    bold = os.path.join(font_dir, "FreeSansBold.ttf")
+    if os.path.exists(reg):
+        pdfmetrics.registerFont(TTFont('FreeSans', reg))
+        pdfmetrics.registerFont(TTFont('FreeSansBold', bold))
+        return 'FreeSans', 'FreeSansBold'
+    return 'Helvetica', 'Helvetica-Bold'
+
+FONT_NAME, FONT_BOLD = register_fonts()
 WIDTH, HEIGHT = A4
-FONT_NAME = "Helvetica"
-FONT_BOLD = "Helvetica-Bold"
+MARGIN = 1.5 * cm
+DRAW_WIDTH = WIDTH - 2 * MARGIN
+LOGO_LIMIT = 2.5 * cm
+Q_IMG_SIZE = 5.5 * cm 
+A_IMG_SIZE = 2.5 * cm
 
-def setup_fonts():
-    """Konfiguruje czcionkę z obsługą polskich znaków."""
-    global FONT_NAME
-    paths = ['/usr/share/fonts/truetype/freefont/FreeSans.ttf', 'FreeSans.ttf']
-    for p in paths:
-        if os.path.exists(p):
-            pdfmetrics.registerFont(TTFont('FreeSans', p))
-            FONT_NAME = 'FreeSans'
-            break
+def draw_page_info(c, page_num):
+    """Rysuje numerację stron w stopce."""
+    c.saveState()
+    c.setFont(FONT_NAME, 8)
+    c.drawRightString(WIDTH - MARGIN, MARGIN / 2, f"Strona {page_num}")
+    c.restoreState()
 
-def draw_header(c, title, logo_file, group_label=None):
-    """Nagłówek na 1. stronie (logo, tytuł, dane osobowe)."""
-    if logo_file:
+def calculate_question_height(q, draw_width):
+    """Oblicza wysokość całego bloku pytania przed rysowaniem."""
+    q_lines = len(simpleSplit(f"X. {q.content}", FONT_BOLD, 10, draw_width))
+    total_h = q_lines * 0.45 * cm
+    
+    has_q_img = bool(q.image_path)
+    total_ans_len = len(str(q.ans_a) + str(q.ans_b) + str(q.ans_c))
+    # Układ poziomy: krótkie teksty + grafiki we wszystkich odp + brak głównego obrazka
+    use_horiz = all([q.image_a, q.image_b, q.image_c]) and total_ans_len < 50 and not has_q_img
+    
+    ans_limit_w = draw_width - (Q_IMG_SIZE + 0.5*cm) if has_q_img else draw_width
+    
+    if use_horiz:
+        ans_h = 0.45 * cm + A_IMG_SIZE + 0.3 * cm
+    else:
+        ans_h = 0
+        for txt, img in [(q.ans_a, q.image_a), (q.ans_b, q.image_b), (q.ans_c, q.image_c)]:
+            lines = len(simpleSplit(f"X) {txt}", FONT_NAME, 10, ans_limit_w - 0.6 * cm))
+            ans_h += lines * 0.45 * cm
+            if img:
+                ans_h += A_IMG_SIZE + 0.3 * cm
+    
+    q_img_h = Q_IMG_SIZE if has_q_img else 0
+    return total_h + max(ans_h, q_img_h) + 1.0 * cm
+
+def draw_header_elements(c, profession_name, topics_str, group_label, logo_file, is_key, page_num):
+    """Nagłówek: logo i metryczka tylko na 1. stronie."""
+    c.saveState()
+    top_y = HEIGHT - MARGIN
+    
+    # 1. LOGO (Tylko 1. strona, obniżone o 0.2cm względem marginesu)
+    logo_bottom_y = top_y
+    if logo_file and page_num == 1:
         try:
             logo_file.seek(0)
-            logo_img = ImageReader(logo_file)
-            img_w, img_h = logo_img.getSize()
-            aspect = img_h / img_w
-            display_w = 2.5 * cm
-            display_h = display_w * aspect
-            c.drawImage(logo_img, WIDTH - MARGIN - display_w, HEIGHT - MARGIN - display_h + 0.5*cm, 
-                        width=display_w, height=display_h, mask='auto')
-        except Exception: 
+            img = ImageReader(logo_file)
+            logo_bottom_y = top_y - LOGO_LIMIT - 0.2 * cm
+            c.drawImage(img, WIDTH - MARGIN - LOGO_LIMIT, logo_bottom_y, 
+                        width=LOGO_LIMIT, height=LOGO_LIMIT, preserveAspectRatio=True, mask='auto')
+        except Exception:
             pass
-    
-    if group_label:
+
+    if page_num == 1:
+        if not is_key:
+            # Dane kandydata
+            c.setFont(FONT_NAME, 10)
+            c.drawString(MARGIN, top_y, "Imię i nazwisko: ..................................................................................")
+            
+            # Grupa i Data pod logo
+            y_labels = min(logo_bottom_y, top_y - 1.2 * cm) - 0.5 * cm
+            c.setFont(FONT_BOLD, 11)
+            c.drawRightString(WIDTH - MARGIN - 0.2*cm, y_labels, f"Test ({group_label})")
+            c.setFont(FONT_NAME, 10)
+            c.drawRightString(WIDTH - MARGIN - 0.2*cm, y_labels - 0.6 * cm, "Data: ....................................")
+            start_y = y_labels - 1.2 * cm
+        else:
+            start_y = top_y - 1.0 * cm
+
+        # Tytuł i Tematyka
         c.setFont(FONT_BOLD, 14)
-        # Ustawiamy tekst pod logo lub w prawym górnym rogu
-        text = f"Arkusz ({group_label})"
-        # WIDTH i MARGIN muszą być dostępne w zasięgu funkcji
-        c.drawRightString(WIDTH - MARGIN, HEIGHT - MARGIN - 1.2*cm, text)
-
-    c.setFont(FONT_NAME, 14)
-    c.drawCentredString(WIDTH / 2, HEIGHT - MARGIN - 1 * cm, title)
-    c.setFont(FONT_NAME, 10)
-    c.drawString(MARGIN, HEIGHT - MARGIN - 2.5 * cm, "Imię i nazwisko: ........................................................ Data: ....................")
-    c.line(MARGIN, HEIGHT - MARGIN - 2.7 * cm, WIDTH - MARGIN, HEIGHT - MARGIN - 2.7 * cm)
-
-def draw_footer(c, page_num, total_pages):
-    """Stopka 'Strona x z y'."""
-    c.setFont(FONT_NAME, 9)
-    text = f"Strona {page_num} z {total_pages}"
-    c.drawRightString(WIDTH - MARGIN, MARGIN / 2, text)
-
-def generate_exam_content(c, questions, profession_name, logo_file, total_pages=None, group_label=None):
-    """Główna logika z zawijaniem tekstu Paragraph."""
-    q_style = ParagraphStyle('Quest', fontName=FONT_NAME, fontSize=11, leading=13, spaceAfter=4)
-    a_style = ParagraphStyle('Ans', fontName=FONT_NAME, fontSize=10, leading=12, leftIndent=0.5*cm)
-    
-    available_width = WIDTH - 2 * MARGIN
-    title = f"Arkusz Egzaminacyjny: {profession_name}"
-    
-    draw_header(c, title, logo_file, group_label=group_label)
-    y = HEIGHT - MARGIN - 4 * cm
-
-    for i, q in enumerate(questions):
-        # Przygotowanie paragrafów
-        q_p = Paragraph(f"<b>{i+1}. {html.escape(q.content)}</b>", q_style)
-        ans_p = [
-            Paragraph(f"A) {html.escape(q.ans_a if q.ans_a else '')}", a_style),
-            Paragraph(f"B) {html.escape(q.ans_b if q.ans_b else '')}", a_style),
-            Paragraph(f"C) {html.escape(q.ans_c if q.ans_c else '')}", a_style)
-        ]
-
-        # Obliczanie wysokości bloku
-        _, h_q = q_p.wrap(available_width, HEIGHT)
-        h_ans = sum([p.wrap(available_width, HEIGHT)[1] for p in ans_p])
+        c.drawCentredString(WIDTH / 2, start_y, f"Arkusz: {profession_name}")
+        c.setFont(FONT_NAME, 9)
+        c.drawCentredString(WIDTH / 2, start_y - 0.6 * cm, f"Tematyka: {topics_str}")
         
-        needed = h_q + h_ans + 1.5 * cm
-        if q.image_path:
-            needed += 5 * cm
-        # Dodajemy miejsce na grafiki w odpowiedziach
-        for img in [q.image_a, q.image_b, q.image_c]:
-            if img:
-                needed += 3.5 * cm
+        # Linia oddzielająca (dynamiczna wysokość pod tematyką)
+        line_y = start_y - 1.2 * cm
+        c.setLineWidth(0.5)
+        c.line(MARGIN, line_y, WIDTH - MARGIN, line_y)
+        res_y = line_y - 0.8 * cm
+    else:
+        # Kolejne strony zaczynają się od razu u góry
+        res_y = top_y - 0.5 * cm
 
-        # Nowa strona jeśli brak miejsca
-        if y < needed:
-            if total_pages:
-                draw_footer(c, c.getPageNumber(), total_pages)
+    c.restoreState()
+    return res_y
+
+def draw_img(c, src, x, y, size):
+    """Rysuje i skaluje obrazki w treści."""
+    if not src: 
+        return y
+    try:
+        img = ImageReader(src)
+        c.drawImage(img, x, y - size, width=size, height=size, preserveAspectRatio=True, mask='auto')
+        return y - size - 0.3 * cm
+    except Exception: 
+        return y
+
+# --- GŁÓWNE FUNKCJE GENERUJĄCE ---
+
+def create_test_paper_pdf(questions, profession, topics_str, logo_file=None, group_label="A"):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    page_num = 1
+    y = draw_header_elements(c, profession.name, topics_str, group_label, logo_file, False, page_num)
+    draw_page_info(c, page_num)
+    
+    for i, q in enumerate(questions):
+        # Sprawdzanie czy pytanie się zmieści
+        q_h = calculate_question_height(q, DRAW_WIDTH)
+        if y - q_h < 1.5 * cm:
+            c.showPage()
+            page_num += 1
+            y = draw_header_elements(c, profession.name, topics_str, group_label, logo_file, False, page_num)
+            draw_page_info(c, page_num)
+
+        c.setFont(FONT_BOLD, 10)
+        lines = simpleSplit(f"{i+1}. {q.content}", FONT_BOLD, 10, DRAW_WIDTH)
+        for line in lines:
+            c.drawString(MARGIN, y, line)
+            y -= 0.45 * cm
+        
+        y_start = y
+        has_q_img = bool(q.image_path)
+        total_ans_len = len(str(q.ans_a) + str(q.ans_b) + str(q.ans_c))
+        use_horiz = all([q.image_a, q.image_b, q.image_c]) and total_ans_len < 50 and not has_q_img
+
+        if use_horiz:
+            col_w = DRAW_WIDTH / 3
+            for idx, (lbl, txt, img) in enumerate([("A", q.ans_a, q.image_a), ("B", q.ans_b, q.image_b), ("C", q.ans_c, q.image_c)]):
+                cur_x = MARGIN + (idx * col_w)
+                c.setFont(FONT_NAME, 10)
+                c.drawString(cur_x, y_start, f"{lbl}) {txt}")
+                draw_img(c, img, cur_x + 0.5*cm, y_start - 0.2*cm, A_IMG_SIZE)
+            y_ans = y_start - A_IMG_SIZE - 0.8 * cm
+        else:
+            ans_w = DRAW_WIDTH - (Q_IMG_SIZE + 0.5*cm) if has_q_img else DRAW_WIDTH
+            y_cur = y_start
+            c.setFont(FONT_NAME, 10)
+            for lbl, txt, img in [("A", q.ans_a, q.image_a), ("B", q.ans_b, q.image_b), ("C", q.ans_c, q.image_c)]:
+                ans_lines = simpleSplit(f"{lbl}) {txt}", FONT_NAME, 10, ans_w - 0.6 * cm)
+                for al in ans_lines:
+                    c.drawString(MARGIN + 0.6*cm, y_cur, al)
+                    y_cur -= 0.45 * cm
+                if img: 
+                    y_cur = draw_img(c, img, MARGIN + 1.2*cm, y_cur, A_IMG_SIZE)
+            y_ans = y_cur
+        
+        y_q_img = y_start
+        if has_q_img:
+            y_q_img = draw_img(c, q.image_path, WIDTH - MARGIN - Q_IMG_SIZE, y_start, Q_IMG_SIZE)
+        
+        y = min(y_ans, y_q_img) - 0.6 * cm
+            
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+def create_answer_key_pdf(questions, profession, group_label="A"):
+    """Generuje klucz odpowiedzi jako lista."""
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    y = draw_header_elements(c, f"KLUCZ ODPOWIEDZI - {profession.name}", "Klucz", group_label, None, True, 1)
+    draw_page_info(c, 1)
+    
+    c.setFont(FONT_NAME, 11)
+    for i, q in enumerate(questions):
+        if y < 2*cm:
             c.showPage()
             y = HEIGHT - MARGIN - 1 * cm
-
-        # Rysowanie pytania
-        q_p.drawOn(c, MARGIN, y - h_q)
-        y -= (h_q + 0.3 * cm)
-
-        # Obrazek główny pytania
-        if q.image_path and os.path.exists(q.image_path):
-            try:
-                c.drawImage(q.image_path, MARGIN + 1*cm, y - 4.5*cm, width=available_width-2*cm, height=4.5*cm, preserveAspectRatio=True, anchor='sw')
-                y -= 5 * cm
-            except Exception:
-                y -= 0.5 * cm
-
-        # Rysowanie odpowiedzi
-        img_fields = [q.image_a, q.image_b, q.image_c]
-        for idx, p in enumerate(ans_p):
-            _, h = p.wrap(available_width, HEIGHT)
-            p.drawOn(c, MARGIN, y - h)
-            y -= h
-            
-            # Grafika w odpowiedzi (jeśli istnieje)
-            img_path = img_fields[idx]
-            if img_path and os.path.exists(img_path):
-                try:
-                    y -= 3.2 * cm
-                    c.drawImage(img_path, MARGIN + 1*cm, y, width=4*cm, height=3*cm, preserveAspectRatio=True, anchor='sw')
-                    y -= 0.2 * cm
-                except Exception:
-                    y -= 0.5 * cm
-            y -= 0.2 * cm
-        
-        y -= 0.6 * cm # Odstęp między pytaniami
-
-    if total_pages:
-        draw_footer(c, c.getPageNumber(), total_pages)
-
-def create_test_paper_pdf(questions, profession_name, logo_file=None, group_label=None):
-    setup_fonts()
-    # Przebieg próbny do zliczenia stron
-    tmp = io.BytesIO()
-    c_tmp = canvas.Canvas(tmp, pagesize=A4)
-    generate_exam_content(c_tmp, questions, profession_name, logo_file, total_pages=None, group_label=group_label)
-    total_pages = c_tmp.getPageNumber()
-    c_tmp.save()
-
-    # Przebieg właściwy
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    generate_exam_content(c, questions, profession_name, logo_file, total_pages=total_pages, group_label=group_label)
+            draw_page_info(c, "cd.")
+        c.drawString(MARGIN, y, f"Pytanie {i+1}: Poprawna odpowiedź {q.correct_ans}")
+        y -= 0.7 * cm
     c.save()
     buffer.seek(0)
     return buffer
 
-def create_answer_key_pdf(questions, profession_name, group_label=None):
-    setup_fonts()
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    c.setFont(FONT_NAME, 16)
-    c.drawCentredString(WIDTH/2, HEIGHT-MARGIN-1*cm, "KLUCZ ODPOWIEDZI")
-    c.setFont(FONT_NAME, 10)
-    c.drawCentredString(WIDTH/2, HEIGHT-MARGIN-1.7*cm, f"Arkusz: {profession_name}")
-    if group_label:
-        c.setFont(FONT_BOLD, 14)
-        c.drawRightString(WIDTH - MARGIN, HEIGHT - MARGIN - 1.2*cm, f"Grupa: {group_label}")
-    c.line(MARGIN, HEIGHT-MARGIN-2.2*cm, WIDTH-MARGIN, HEIGHT-MARGIN-2.2*cm)
-    y = HEIGHT - MARGIN - 3*cm 
-    col = 0
-    for i, q in enumerate(questions):
-        x = MARGIN + (col * 6 * cm)
-        c.drawString(x, y, f"{i+1}: [ {q.correct_ans} ]")
-        y -= 0.8 * cm
-        if y < MARGIN + 1*cm:
-            if col < 2:
-                 col += 1
-                 y = HEIGHT - MARGIN - 3*cm
-            else:
-                 c.showPage()
-                 col = 0
-                 y = HEIGHT - MARGIN - 3*cm
-    c.save()
-    buffer.seek(0)
-    return buffer
-
-def create_full_export_zip(test_sets):
-    """
-    Pakuje wiele testów i kluczy do jednego archiwum ZIP.
-    test_sets: Lista słowników [{'test': buffer, 'key': buffer}, ...]
-    """
+def create_full_export_zip(all_sets):
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        for idx, s in enumerate(test_sets):
-            prefix = f"Zestaw_{idx+1}"
-            # getvalue() wyciąga czyste bajty z bufora BytesIO
-            zip_file.writestr(f"{prefix}_Arkusz.pdf", s['test'].getvalue())
-            zip_file.writestr(f"{prefix}_Klucz.pdf", s['key'].getvalue())
-            
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for s in all_sets:
+            zf.writestr(f"Arkusz_Grupa_{s['label']}.pdf", s['test'].getvalue())
+            zf.writestr(f"Klucz_Grupa_{s['label']}.pdf", s['key'].getvalue())
     zip_buffer.seek(0)
     return zip_buffer

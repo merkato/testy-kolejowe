@@ -11,6 +11,7 @@ DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
 
 # --- KONFIGURACJA PLIKÓW ---
 UPLOAD_DIR = "uploads"
+IMAGE_PATH = "uploads"
 ALLOWED_EXTENSIONS = ["png", "jpg", "jpeg", "webp"]
 
 # --- DANE STARTOWE SYSTEMU ---

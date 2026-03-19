@@ -1,5 +1,5 @@
 # Używamy oficjalnego obrazu Pythona
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # Ustawienie zmiennych środowiskowych (Poprawiony format key=value)
 ENV PYTHONDONTWRITEBYTECODE=1

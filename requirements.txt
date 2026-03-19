@@ -4,5 +4,6 @@ pymysql
 bcrypt
 pillow
 pandas
+xslxwriter
 reportlab
 cryptography

@@ -1,119 +1,181 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, ForeignKey, Table
+import enum
+import os
+from sqlalchemy import (
+    create_engine, Column, Integer, String, Boolean, 
+    Text, Float, DateTime, ForeignKey, Enum, Table
+)
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
-from config import DATABASE_URL  # Import konfiguracji
+from sqlalchemy.orm import relationship, sessionmaker
 
 Base = declarative_base()
 
-# --- TABELE POWIĄZAŃ (Many-to-Many) ---
+# --- TABELE ASOCJACYJNE (Relacje Many-to-Many) ---
 
-# Powiązanie Użytkowników z Grupami Zawodowymi
-user_profession_m2m = Table(
-    'user_profession', Base.metadata,
-    Column('user_id', Integer, ForeignKey('users.id', ondelete="CASCADE"), primary_key=True),
-    Column('profession_id', Integer, ForeignKey('profession_groups.id', ondelete="CASCADE"), primary_key=True)
-)
-
-# Powiązanie Pytań z Grupami Zawodowymi
-question_profession_m2m = Table(
+# Powiązanie pytań z grupami zawodowymi
+question_profession = Table(
     'question_profession', Base.metadata,
-    Column('question_id', Integer, ForeignKey('questions.id', ondelete="CASCADE"), primary_key=True),
-    Column('profession_id', Integer, ForeignKey('profession_groups.id', ondelete="CASCADE"), primary_key=True)
+    Column('question_id', Integer, ForeignKey('questions.id'), primary_key=True),
+    Column('profession_id', Integer, ForeignKey('profession_groups.id'), primary_key=True)
 )
 
-# Powiązanie Pytań z Rodzajami Testów
-question_test_type_m2m = Table(
+# Powiązanie pytań z rodzajami testów (np. Ie-1, Ruch)
+question_test_type = Table(
     'question_test_type', Base.metadata,
-    Column('question_id', Integer, ForeignKey('questions.id', ondelete="CASCADE"), primary_key=True),
-    Column('test_type_id', Integer, ForeignKey('test_types.id', ondelete="CASCADE"), primary_key=True)
+    Column('question_id', Integer, ForeignKey('questions.id'), primary_key=True),
+    Column('test_type_id', Integer, ForeignKey('test_types.id'), primary_key=True)
 )
 
-# --- MODELE ---
+# Powiązanie sesji egzaminacyjnej z wieloma kategoriami pytań
+session_test_type = Table(
+    'session_test_type', Base.metadata,
+    Column('session_id', Integer, ForeignKey('exam_sessions.id'), primary_key=True),
+    Column('test_type_id', Integer, ForeignKey('test_types.id'), primary_key=True)
+)
+
+# Uprawnienia egzaminatora do zarządzania konkretnymi zawodami
+examiner_profession = Table(
+    'examiner_profession', Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('profession_id', Integer, ForeignKey('profession_groups.id'), primary_key=True)
+)
+
+# --- ENUMERACJE (Słowniki systemowe) ---
+
+class UserRole(enum.Enum):
+    ADMIN = "admin"
+    EXAMINER = "egzaminator"
+    USER = "uzytkownik"
+
+class SessionStatus(enum.Enum):
+    PLANNED = "zaplanowana"
+    ACTIVE = "w toku"
+    FINISHED = "zakonczona"
+
+# --- MODELE BAZODANOWE ---
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    username = Column(String(50), unique=True, nullable=False)
+    password = Column(String(255), nullable=False)
+    role = Column(Enum(UserRole), default=UserRole.USER)
+    
+    # Grupy zawodowe, do których egzaminator ma uprawnienia (filtrowanie sesji/wyników)
+    managed_professions = relationship(
+        "ProfessionGroup", 
+        secondary=examiner_profession,
+        backref="authorized_examiners"
+    )
 
 class ProfessionGroup(Base):
-    """Grupy zawodowe: Maszynista, Kierownik, Konduktor, Rewident."""
     __tablename__ = 'profession_groups'
     id = Column(Integer, primary_key=True)
     name = Column(String(100), unique=True, nullable=False)
 
-    def __repr__(self):
-        return self.name
-
 class TestType(Base):
-    """Rodzaje testów: Ruchowe, Taborowe, Handlowe itp."""
     __tablename__ = 'test_types'
     id = Column(Integer, primary_key=True)
     name = Column(String(100), unique=True, nullable=False)
 
-    def __repr__(self):
-        return self.name
-
-class User(Base):
-    """Użytkownicy systemu z rolami i przypisanymi grupami zawodowymi."""
-    __tablename__ = 'users'
-    id = Column(Integer, primary_key=True)
-    username = Column(String(50), unique=True, nullable=False)
-    password_hash = Column(String(255), nullable=False)
-    role = Column(String(20), nullable=False) # Administrator, Edytor, Użytkownik
-    
-    # Relacja do grup zawodowych (Użytkownik może należeć do wielu)
-    professions = relationship("ProfessionGroup", secondary=user_profession_m2m, backref="users")
-
 class Question(Base):
-    """Baza pytań z pełną informacją o odpowiedziach i statystykach."""
     __tablename__ = 'questions'
     id = Column(Integer, primary_key=True)
     content = Column(Text, nullable=False)
-    ans_a = Column(String(500), nullable=False)
-    image_a = Column(String(255), nullable=True)  # Ilustracja do odp A
-    ans_b = Column(String(500), nullable=False)
-    image_b = Column(String(255), nullable=True)  # Ilustracja do odp B
-    ans_c = Column(String(500), nullable=False)
-    image_c = Column(String(255), nullable=True)  # Ilustracja do odp B
-    correct_ans = Column(String(1), nullable=False) # A, B lub C
-    image_path = Column(String(255), nullable=True) # Ścieżka do pliku w /uploads
-    comment = Column(Text, nullable=True)
+    ans_a = Column(Text)
+    ans_b = Column(Text)
+    ans_c = Column(Text)
+    correct_ans = Column(String(1)) # A, B lub C
     
-    # Statystyki zdawalności
+    # Ścieżki do plików graficznych
+    image_path = Column(String(255)) # Główne zdjęcie do pytania
+    image_a = Column(String(255))
+    image_b = Column(String(255))
+    image_c = Column(String(255))
+    
+    comment = Column(Text) # Komentarz dydaktyczny wyświetlany po błędzie
+    
+    # Globalne liczniki zdawalności
     total_attempts = Column(Integer, default=0)
     correct_attempts = Column(Integer, default=0)
-    pass_rate = Column(Float, default=0.0)
+    
+    professions = relationship("ProfessionGroup", secondary=question_profession)
+    test_types = relationship("TestType", secondary=question_test_type)
 
-    # Relacje Many-to-Many
-    professions = relationship("ProfessionGroup", secondary=question_profession_m2m, backref="questions")
-    test_types = relationship("TestType", secondary=question_test_type_m2m, backref="questions")
+class ExamSession(Base):
+    __tablename__ = 'exam_sessions'
+    id = Column(Integer, primary_key=True)
+    training_number = Column(String(25), unique=True, nullable=False) # Nr szkolenia/egzaminu
+    
+    # Konfiguracja sesji
+    profession_id = Column(Integer, ForeignKey('profession_groups.id'))
+    question_count = Column(Integer, default=20)
+    pass_threshold = Column(Integer, default=80) # Próg w % (0-100)
+    time_limit = Column(Integer, default=30)     # Limit w minutach
+    max_focus_loss = Column(Integer, default=3)  # Dopuszczalne opuszczenia okna
+    
+    # Ustawienia widoczności dla egzaminowanego
+    show_errors = Column(Boolean, default=True)
+    show_comment = Column(Boolean, default=True)
+    
+    # Czas i przebieg
+    scheduled_start = Column(DateTime, nullable=False) # Data wprowadzona ręcznie
+    actual_end = Column(DateTime, nullable=True)       # Ustawiana przy "Zakończ sesję"
+    status = Column(Enum(SessionStatus), default=SessionStatus.PLANNED)
+    
+    # Powiązania
+    examiner_id = Column(Integer, ForeignKey('users.id'))
+    test_types = relationship("TestType", secondary=session_test_type)
+    examinees = relationship("Examinee", backref="session", cascade="all, delete-orphan")
 
-# --- ZARZĄDZANIE SILNIKIEM I SESJĄ ---
+class Examinee(Base):
+    __tablename__ = 'examinees'
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey('exam_sessions.id'))
+    journal_number = Column(Integer, nullable=False)
+    
+    # Bezpieczeństwo i dostęp
+    access_token = Column(String(64), unique=True) # Unikalny klucz logowania technicznego
+    is_active = Column(Boolean, default=False)     # Blokada wielokrotnego zalogowania
+    is_finished = Column(Boolean, default=False)   # Czy zakończył i oddał arkusz
+    focus_loss_counter = Column(Integer, default=0) # Licznik przełączeń okien
+    
+    # Statystyki indywidualne
+    start_datetime = Column(DateTime, nullable=True)
+    end_datetime = Column(DateTime, nullable=True)
+    score_percent = Column(Float, default=0.0)
+    # Zapis odpowiedzi w formacie JSON: {"pytanie_id": "odp_uzytkownika"}
+    answers_json = Column(Text) 
 
-engine = create_engine(
-    DATABASE_URL, 
-    pool_pre_ping=True,  # Automatyczne odświeżanie połączenia (ważne dla MariaDB)
-    echo=False           # Ustaw na True podczas debugowania
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Dodaj do db.py pod tabelą Examinee
+
+class QuestionAttempt(Base):
+    __tablename__ = 'question_attempts'
+    id = Column(Integer, primary_key=True)
+    question_id = Column(Integer, ForeignKey('questions.id'))
+    examinee_id = Column(Integer, ForeignKey('examinees.id'))
+    session_id = Column(Integer, ForeignKey('exam_sessions.id'))
+    is_correct = Column(Boolean, nullable=False)
+    timestamp = Column(DateTime, default=datetime.now)
+
+    # Relacje dla łatwiejszego wyciągania danych
+    question = relationship("Question", backref="attempts")
+    session = relationship("ExamSession", backref="question_logs")
+
+# --- INICJALIZACJA I FUNKCJE POMOCNICZE ---
+
+DB_PATH = 'database.db'
+engine = create_engine(f'sqlite:///{DB_PATH}', echo=False)
 
 def init_db():
-    """Inicjalizuje tabele. Wywoływane przy starcie app.py."""
-    Base.metadata.create_all(bind=engine)
+    """Tworzy tabele w bazie danych, jeśli jeszcze nie istnieją."""
+    Base.metadata.create_all(engine)
+
+SessionLocal = sessionmaker(bind=engine)
 
 def get_session():
-    """Tworzy i zwraca nową sesję bazy danych."""
+    """Zwraca nową sesję połączenia z bazą danych."""
     return SessionLocal()
 
-def update_question_stats(question_id, is_correct):
-    """Aktualizuje statystyki pytania po zakończeniu testu."""
-    session = get_session()
-    try:
-        q = session.query(Question).filter(Question.id == question_id).first()
-        if q:
-            q.total_attempts += 1
-            if is_correct:
-                q.correct_attempts += 1
-            # Wyliczenie procentowe
-            q.pass_rate = round((q.correct_attempts / q.total_attempts) * 100, 2)
-            session.commit()
-    except Exception as e:
-        session.rollback()
-        print(f"Błąd aktualizacji statystyk: {e}")
-    finally:
-        session.close()
+# Automatyczna inicjalizacja przy imporcie modułu
+if not os.path.exists(DB_PATH):
+    init_db()
